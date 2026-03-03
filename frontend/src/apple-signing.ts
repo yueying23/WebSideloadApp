@@ -95,6 +95,7 @@ function getAppleApi(): AppleAPI {
       body: options.body,
       redirect: "manual",
       insecure: true,
+      verbose: 4,
       _libcurl_http_version: 1.1,
     } as never)
     return response

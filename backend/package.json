@@ -1,0 +1,19 @@
+{
+  "name": "webmuxd-wisp-workers-demo",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build:frontend": "cd ../frontend && bun run build",
+    "dev": "bun run build:frontend && wrangler dev",
+    "deploy": "bun run build:frontend && wrangler deploy",
+    "check": "bun run build:frontend && wrangler deploy --dry-run",
+    "types": "wrangler types"
+  },
+  "dependencies": {
+    "@mercuryworkshop/wisp-js": "^0.4.1"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.2",
+    "wrangler": "^4.56.0"
+  }
+}
