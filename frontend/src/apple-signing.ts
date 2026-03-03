@@ -51,6 +51,37 @@ export interface AppleSigningResult {
   teamId: string
 }
 
+export interface AppleDeveloperSession {
+  anisetteData: AnisetteData
+  dsid: string
+  authToken: string
+}
+
+export interface AppleDeveloperContext {
+  appleId: string
+  session: AppleDeveloperSession
+  team: Team
+  certificates: Certificate[]
+  devices: Device[]
+}
+
+export interface AppleDeveloperLoginRequest {
+  anisetteData: AnisetteData
+  credentials: AppleSigningCredentials
+  onLog?: (message: string) => void
+  onTwoFactorRequired?: (submitCode: (code: string) => void) => void
+}
+
+export interface AppleSigningWithContextRequest {
+  ipaFile: File
+  context: AppleDeveloperContext
+  deviceUdid: string
+  deviceName?: string
+  bundleIdOverride?: string
+  displayNameOverride?: string
+  onLog: (message: string) => void
+}
+
 let appleApiInstance: AppleAPI | null = null
 
 function getAppleApi(): AppleAPI {
@@ -72,10 +103,108 @@ function getAppleApi(): AppleAPI {
   return appleApiInstance
 }
 
+export async function loginAppleDeveloperAccount(
+  request: AppleDeveloperLoginRequest,
+): Promise<AppleDeveloperContext> {
+  const appleId = request.credentials.appleId.trim()
+  const password = request.credentials.password
+  if (!appleId || !password) {
+    throw new Error("Cannot login Apple account: Apple ID or password is empty")
+  }
+
+  const log = request.onLog ?? (() => undefined)
+  log(`Login stage: authenticating Apple account ${maskEmail(appleId)}...`)
+
+  const api = getAppleApi()
+  const { session } = await api.authenticate(
+    appleId,
+    password,
+    request.anisetteData,
+    (submitCode) => {
+      if (request.onTwoFactorRequired) {
+        request.onTwoFactorRequired((code) => {
+          const normalized = code.trim()
+          if (normalized.length === 0) {
+            throw new Error("2FA code is required")
+          }
+          submitCode(normalized)
+        })
+        return
+      }
+      const code = window.prompt("Apple 2FA code")
+      if (!code || code.trim().length === 0) {
+        throw new Error("2FA code is required")
+      }
+      submitCode(code.trim())
+    },
+  )
+
+  log("Login stage: fetching team/certificates/devices...")
+  const team = await api.fetchTeam(session)
+  const [certificates, devices] = await Promise.all([
+    api.fetchCertificates(session, team),
+    api.fetchDevices(session, team).catch(() => [] as Device[]),
+  ])
+
+  log(
+    `Login stage: team=${team.identifier} (${team.name}), certs=${certificates.length}, devices=${devices.length}.`,
+  )
+
+  return {
+    appleId,
+    session,
+    team,
+    certificates,
+    devices,
+  }
+}
+
+export async function refreshAppleDeveloperContext(
+  context: AppleDeveloperContext,
+  onLog?: (message: string) => void,
+): Promise<AppleDeveloperContext> {
+  const log = onLog ?? (() => undefined)
+  const api = getAppleApi()
+  log("Signing stage: refreshing team/certificates/devices...")
+  const team = await api.fetchTeam(context.session)
+  const [certificates, devices] = await Promise.all([
+    api.fetchCertificates(context.session, team),
+    api.fetchDevices(context.session, team).catch(() => [] as Device[]),
+  ])
+  log(
+    `Signing stage: refreshed team=${team.identifier}, certs=${certificates.length}, devices=${devices.length}.`,
+  )
+  return {
+    ...context,
+    team,
+    certificates,
+    devices,
+  }
+}
+
 export async function signIpaWithApple(
   request: AppleSigningRequest,
 ): Promise<AppleSigningResult> {
-  const { ipaFile, anisetteData, credentials, onLog } = request
+  const context = await loginAppleDeveloperAccount({
+    anisetteData: request.anisetteData,
+    credentials: request.credentials,
+    onLog: request.onLog,
+  })
+  return await signIpaWithAppleContext({
+    ipaFile: request.ipaFile,
+    context,
+    deviceUdid: request.deviceUdid,
+    deviceName: request.deviceName,
+    bundleIdOverride: request.bundleIdOverride,
+    displayNameOverride: request.displayNameOverride,
+    onLog: request.onLog,
+  })
+}
+
+export async function signIpaWithAppleContext(
+  request: AppleSigningWithContextRequest,
+): Promise<AppleSigningResult> {
+  const { ipaFile, context, onLog } = request
   const ipaData = new Uint8Array(await ipaFile.arrayBuffer())
   const ipaInfo = readIpaInfo(ipaData)
 
@@ -84,41 +213,32 @@ export async function signIpaWithApple(
     throw new Error("Cannot sign IPA: bundle identifier is missing")
   }
 
-  const appleId = credentials.appleId.trim()
-  const password = credentials.password
-  if (!appleId || !password) {
-    throw new Error("Cannot sign IPA: Apple ID or password is empty")
-  }
-
-  onLog(`Signing stage: authenticating Apple account ${maskEmail(appleId)}...`)
   const api = getAppleApi()
-  const { session } = await api.authenticate(appleId, password, anisetteData, (submitCode) => {
-    const code = window.prompt("Apple 2FA code")
-    if (!code || code.trim().length === 0) {
-      throw new Error("2FA code is required")
-    }
-    submitCode(code.trim())
-  })
-
-  const team = await api.fetchTeam(session)
+  const team = context.team
   onLog(`Signing stage: using team ${team.identifier} (${team.name}).`)
 
   const finalBundleId = buildTeamScopedBundleId(bundleIdBase, team.identifier)
   const displayName = (request.displayNameOverride ?? ipaInfo.displayName ?? "").trim()
 
-  const identity = await ensureSigningIdentity(api, session, team, appleId, onLog)
+  const identity = await ensureSigningIdentity(
+    api,
+    context.session,
+    team,
+    context.appleId,
+    onLog,
+  )
   await ensureDeviceRegistered(
     api,
-    session,
+    context.session,
     team,
     request.deviceUdid,
     request.deviceName,
     onLog,
   )
-  const appId = await ensureAppId(api, session, team, finalBundleId, onLog)
+  const appId = await ensureAppId(api, context.session, team, finalBundleId, onLog)
 
   onLog("Signing stage: fetching provisioning profile...")
-  const provisioningProfile = await api.fetchProvisioningProfile(session, team, appId)
+  const provisioningProfile = await api.fetchProvisioningProfile(context.session, team, appId)
 
   onLog("Signing stage: resigning IPA in browser...")
   const signed = await signIPA({

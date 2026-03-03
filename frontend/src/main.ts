@@ -1,7 +1,12 @@
 import "./style.css"
 import * as webmuxdModule from "webmuxd"
 import { getAnisetteData, provisionAnisette, type AnisetteData } from "./anisette-service"
-import { signIpaWithApple } from "./apple-signing"
+import {
+  loginAppleDeveloperAccount,
+  refreshAppleDeveloperContext,
+  signIpaWithAppleContext,
+  type AppleDeveloperContext,
+} from "./apple-signing"
 import initOpensslWasm, {
   libimobiledevice_generate_pair_record,
   OpensslClient,
@@ -53,8 +58,6 @@ interface StartSessionResult {
 interface DirectUsbMuxClient {
   readonly isHandshakeComplete: boolean
   readonly isLockdownConnected: boolean
-  readonly isAfcConnected: boolean
-  readonly isInstProxyConnected: boolean
   readonly isSessionStarted: boolean
   readonly isSessionSslEnabled: boolean
   readonly isTlsActive: boolean
@@ -103,11 +106,6 @@ interface DirectUsbMuxClientCtor {
   ): DirectUsbMuxClient
 }
 
-interface SigningPreflightContext {
-  anisetteData: AnisetteData
-  preparedAtIso: string
-}
-
 interface WasmPairRecordPayload {
   hostId: string
   systemBuid: string
@@ -118,6 +116,26 @@ interface WasmPairRecordPayload {
   deviceCertificatePem: string
 }
 
+interface PairedDeviceInfo {
+  udid: string
+  name: string | null
+}
+
+type ProgressSource = "sign" | "install"
+
+interface ProgressUpdate {
+  percent: number
+  status: string
+  source: ProgressSource
+}
+
+interface StoredAccountSummary {
+  appleId: string
+  teamId: string
+  teamName: string
+  updatedAtIso: string
+}
+
 const LOCKDOWN_PORT = 62078
 
 const HOST_ID_STORAGE_KEY = "webmuxd:host-id"
@@ -125,11 +143,8 @@ const SYSTEM_BUID_STORAGE_KEY = "webmuxd:system-buid"
 const PAIR_RECORDS_STORAGE_KEY = "webmuxd:pair-records-by-udid"
 const LEGACY_PAIR_RECORD_STORAGE_KEY = "webmuxd:pair-record"
 const APPLE_ID_STORAGE_KEY = "webmuxd:apple-id"
-const SIGN_BUNDLE_ID_STORAGE_KEY = "webmuxd:sign-bundle-id"
-const SIGN_DISPLAY_NAME_STORAGE_KEY = "webmuxd:sign-display-name"
-
-const ENABLE_BROWSER_SIGNING_PIPELINE = true
-const SIGNING_PREFLIGHT_REQUIRED = false
+const APPLE_ACCOUNT_SUMMARY_STORAGE_KEY = "webmuxd:apple-account-summary"
+const DEMO_MODE_STORAGE_KEY = "webmuxd:demo-mode"
 
 const webmuxdModuleValue = webmuxdModule as unknown as Record<string, unknown>
 
@@ -183,143 +198,111 @@ if (!app) {
 }
 
 app.innerHTML = `
-  <main class="shell">
+  <main class="page">
     <section class="panel">
-      <p class="eyebrow">Pure Browser usbmux + lockdown</p>
-      <h1>WebMuxD Direct Mode</h1>
-      <p class="subline">
-        Handshake with iPhone USB MUX directly, then connect lockdownd (62078).
-      </p>
-      <div id="ipa-drop-zone" class="drop-zone">
-        Drag & drop IPA here to run full flow: Signing Preflight -> Select Device -> Session -> Upload -> Install
-      </div>
-      <div class="request-row">
-        <label for="host-id">HostID</label>
-        <input id="host-id" type="text" />
-      </div>
-      <div class="request-row">
-        <label for="system-buid">SystemBUID</label>
-        <input id="system-buid" type="text" />
-      </div>
-      <div class="request-row">
-        <label for="apple-id">Apple ID</label>
-        <input id="apple-id" type="email" autocomplete="username" />
-      </div>
-      <div class="request-row">
-        <label for="apple-password">Apple Password</label>
-        <input id="apple-password" type="password" autocomplete="current-password" />
-      </div>
-      <div class="request-row">
-        <label for="sign-bundle-id">Sign BundleID</label>
-        <input id="sign-bundle-id" type="text" placeholder="optional" />
-      </div>
-      <div class="request-row">
-        <label for="sign-display-name">Sign DisplayName</label>
-        <input id="sign-display-name" type="text" placeholder="optional" />
-      </div>
-      <div class="request-row">
-        <label for="ipa-file">Select IPA</label>
+      <header class="hero">
+        <h1>altstore web</h1>
+        <label class="demo-toggle" for="demo-mode-toggle">
+          <input id="demo-mode-toggle" type="checkbox" />
+          <span>demo mode</span>
+        </label>
+      </header>
+
+      <label id="ipa-drop-zone" class="drop-area" for="ipa-file">
+        <span id="drop-label">drag or select ipa</span>
+        <span class="drop-tip">.ipa file</span>
         <input id="ipa-file" type="file" accept=".ipa,application/octet-stream" />
-      </div>
-      <div class="state-grid">
-        <div class="state-item">
-          <span class="label">WebUSB</span>
-          <span id="support-state" class="value"></span>
+      </label>
+
+      <section class="row login-row">
+        <span class="k">email</span>
+        <input id="apple-id" type="email" autocomplete="username" placeholder="your apple id" />
+        <span class="k">password</span>
+        <input id="apple-password" type="password" autocomplete="current-password" placeholder="app-specific password" />
+        <button id="login-sign-btn">login and sign</button>
+      </section>
+
+      <section class="row action-row">
+        <button id="pair-device-btn">pair device</button>
+        <span class="k">device udid</span>
+        <code id="device-udid" class="udid">-</code>
+        <button id="install-btn">install</button>
+      </section>
+
+      <div id="status-line" class="status-line">status: idle</div>
+
+      <section class="progress-wrap">
+        <div class="progress-head">
+          <span>sign/install progress</span>
+          <span id="install-progress-text">idle</span>
         </div>
-        <div class="state-item">
-          <span class="label">Transport</span>
-          <span id="transport-state" class="value"></span>
+        <div class="progress-track" aria-hidden="true">
+          <div id="install-progress-bar" class="progress-bar"></div>
         </div>
-        <div class="state-item">
-          <span class="label">MUX</span>
-          <span id="mux-state" class="value"></span>
-        </div>
-        <div class="state-item">
-          <span class="label">Lockdown TCP</span>
-          <span id="lockdown-state" class="value"></span>
-        </div>
-        <div class="state-item">
-          <span class="label">Pair</span>
-          <span id="pair-state" class="value"></span>
-        </div>
-        <div class="state-item">
-          <span class="label">Lockdown Session</span>
-          <span id="session-state" class="value"></span>
-        </div>
-        <div class="state-item">
-          <span class="label">AFC</span>
-          <span id="afc-state" class="value"></span>
-        </div>
-        <div class="state-item">
-          <span class="label">InstProxy</span>
-          <span id="instproxy-state" class="value"></span>
-        </div>
-      </div>
-    </section>
-    <section class="log-panel">
-      <div class="log-head">
-        <h2>Event Log</h2>
-      </div>
-      <pre id="log" class="log"></pre>
+      </section>
+
+      <pre id="log" class="log">log...</pre>
     </section>
   </main>
 `
 
-const hostIdInput = mustGetInput("host-id")
-const systemBuidInput = mustGetInput("system-buid")
+const isSupported = WebUsbTransport.supported()
+
 const appleIdInput = mustGetInput("apple-id")
 const applePasswordInput = mustGetInput("apple-password")
-const signBundleIdInput = mustGetInput("sign-bundle-id")
-const signDisplayNameInput = mustGetInput("sign-display-name")
 const ipaFileInput = mustGetInput("ipa-file")
+const demoModeToggle = mustGetInput("demo-mode-toggle")
 
-const supportState = mustGetElement("support-state")
-const transportState = mustGetElement("transport-state")
-const muxState = mustGetElement("mux-state")
-const lockdownState = mustGetElement("lockdown-state")
-const pairState = mustGetElement("pair-state")
-const sessionState = mustGetElement("session-state")
-const afcState = mustGetElement("afc-state")
-const instProxyState = mustGetElement("instproxy-state")
-const ipaDropZone = mustGetElement("ipa-drop-zone")
+const loginSignButton = mustGetButton("login-sign-btn")
+const pairDeviceButton = mustGetButton("pair-device-btn")
+const installButton = mustGetButton("install-btn")
+
+const dropArea = mustGetElement("ipa-drop-zone")
+const dropLabel = mustGetElement("drop-label")
+const deviceUdidView = mustGetElement("device-udid")
+const statusLine = mustGetElement("status-line")
+const installProgressTextView = mustGetElement("install-progress-text")
+const installProgressBarView = mustGetElement("install-progress-bar")
 const logView = mustGetElement("log")
 
 const logLines: string[] = []
-const isSupported = WebUsbTransport.supported()
 
 let directClient: DirectUsbMuxClient | null = null
-let installFlowInProgress = false
-let signingPreflightPromise: Promise<SigningPreflightContext | null> | null = null
+let pairedDeviceInfo: PairedDeviceInfo | null = null
+let selectedIpaFile: File | null = null
 
-hostIdInput.value = getOrCreateHostId()
-systemBuidInput.value = getOrCreateSystemBuid()
+let anisetteData: AnisetteData | null = null
+let loginContext: AppleDeveloperContext | null = null
+
+let preparedSignedIpa: File | null = null
+let preparedSourceKey: string | null = null
+
+let busyPairing = false
+let busyLoginSign = false
+let busyInstall = false
+let demoModeEnabled = loadText(DEMO_MODE_STORAGE_KEY) === "1"
+let installProgressPercent = 0
+let installProgressStatus = "idle"
+let installProgressIncludesSigning = false
+
 appleIdInput.value = loadText(APPLE_ID_STORAGE_KEY) ?? ""
-applePasswordInput.value = ""
-signBundleIdInput.value = loadText(SIGN_BUNDLE_ID_STORAGE_KEY) ?? ""
-signDisplayNameInput.value = loadText(SIGN_DISPLAY_NAME_STORAGE_KEY) ?? ""
 
 const addLog = (message: string): void => {
+  const progress = parseProgressFromLog(message)
+  if (progress) {
+    applyProgressUpdate(progress)
+  }
+
   const now = new Date()
   const time = `${now.toLocaleTimeString()}.${String(now.getMilliseconds()).padStart(3, "0")}`
-  logLines.push(`[${time}] ${message}`)
-  logView.textContent = logLines.slice(-200).join("\n")
+  const safeMessage = demoModeEnabled ? sanitizeDemoLogText(message) : message
+  logLines.push(`[${time}] ${safeMessage}`)
+  renderLogView()
 }
 
-const refreshState = (): void => {
-  supportState.textContent = isSupported ? "supported" : "not supported"
-  transportState.textContent = directClient ? "selected" : "not selected"
-  muxState.textContent = directClient?.isHandshakeComplete ? "ready" : "pending"
-  lockdownState.textContent = directClient?.isLockdownConnected ? "connected" : "disconnected"
-  pairState.textContent = directClient?.isPaired ? "paired" : "not paired"
-  sessionState.textContent = directClient?.isSessionStarted
-    ? directClient.isSessionSslEnabled
-      ? directClient.isTlsActive
-        ? "started (tls active)"
-        : "started (ssl required)"
-      : "started"
-    : "not started"
-  afcState.textContent = directClient?.isAfcConnected ? "connected" : "disconnected"
-  instProxyState.textContent = directClient?.isInstProxyConnected ? "connected" : "disconnected"
+const clearPreparedSigned = (): void => {
+  preparedSignedIpa = null
+  preparedSourceKey = null
 }
 
 const ensureClientSelected = async (): Promise<DirectUsbMuxClient> => {
@@ -330,7 +313,7 @@ const ensureClientSelected = async (): Promise<DirectUsbMuxClient> => {
   const transport = await WebUsbTransport.requestAppleDevice()
   directClient = new WebmuxdDirectUsbMuxClient(transport, {
     log: addLog,
-    onStateChange: refreshState,
+    onStateChange: refreshUi,
     lockdownLabel: "webmuxd.frontend",
     tlsFactory: {
       ensureReady: ensureOpensslReady,
@@ -350,257 +333,486 @@ const ensureClientSelected = async (): Promise<DirectUsbMuxClient> => {
     },
   })
 
-  addLog("Apple device selected.")
-  refreshState()
+  addLog("device selected from browser popup")
+  refreshUi()
   return directClient
 }
 
-const getSigningCredentials = (): { appleId: string; password: string } | null => {
-  const appleId = appleIdInput.value.trim()
-  const password = applePasswordInput.value
-  if (!appleId || !password) {
-    return null
+const pairDeviceFlow = async (): Promise<void> => {
+  if (busyPairing) {
+    return
   }
-  return { appleId, password }
-}
-
-const prepareSigningPreflight = async (
-  log: (message: string) => void,
-): Promise<SigningPreflightContext | null> => {
-  if (signingPreflightPromise) {
-    return signingPreflightPromise
-  }
-
-  signingPreflightPromise = (async () => {
-    try {
-      log("Signing preflight: provisioning anisette...")
-      await provisionAnisette()
-      const anisetteData = await getAnisetteData()
-      const context: SigningPreflightContext = {
-        anisetteData,
-        preparedAtIso: new Date().toISOString(),
-      }
-      log(
-        `Signing preflight ready: machineID=${shortToken(anisetteData.machineID)}, locale=${anisetteData.locale}, timezone=${anisetteData.timeZone}`,
-      )
-      return context
-    } catch (error) {
-      const message = formatError(error)
-      log(`Signing preflight failed: ${message}`)
-      if (SIGNING_PREFLIGHT_REQUIRED) {
-        throw error
-      }
-      log("Signing preflight skipped (non-blocking mode).")
-      return null
-    }
-  })()
+  busyPairing = true
+  refreshUi()
 
   try {
-    return await signingPreflightPromise
-  } finally {
-    signingPreflightPromise = null
-  }
-}
-
-const prepareIpaForInstall = async (
-  ipaFile: File,
-  log: (message: string) => void,
-  device: { udid: string; name?: string },
-): Promise<{ installFile: File; signingContext: SigningPreflightContext | null }> => {
-  const signingContext = await prepareSigningPreflight(log)
-  if (signingContext) {
-    log(`Signing preflight timestamp: ${signingContext.preparedAtIso}`)
-  }
-
-  if (!ENABLE_BROWSER_SIGNING_PIPELINE) {
-    log("Signing stage: browser resign pipeline is disabled, using original IPA.")
-    return { installFile: ipaFile, signingContext }
-  }
-  if (!signingContext) {
-    log("Signing stage: anisette is unavailable, using original IPA.")
-    return { installFile: ipaFile, signingContext: null }
-  }
-
-  const credentials = getSigningCredentials()
-  if (!credentials) {
-    log("Signing stage: Apple ID/password not set, using original IPA.")
-    return { installFile: ipaFile, signingContext }
-  }
-
-  const bundleIdOverride = signBundleIdInput.value.trim()
-  const displayNameOverride = signDisplayNameInput.value.trim()
-
-  const signingResult = await signIpaWithApple({
-    ipaFile,
-    anisetteData: signingContext.anisetteData,
-    credentials,
-    deviceUdid: device.udid,
-    deviceName: device.name,
-    bundleIdOverride: bundleIdOverride.length > 0 ? bundleIdOverride : undefined,
-    displayNameOverride: displayNameOverride.length > 0 ? displayNameOverride : undefined,
-    onLog: log,
-  })
-
-  log(
-    `Signing stage: signed IPA ready (${signingResult.signedFile.name}), bundleId=${signingResult.outputBundleId}, team=${signingResult.teamId}.`,
-  )
-
-  return { installFile: signingResult.signedFile, signingContext }
-}
-
-const installIpaViaInstProxy = async (
-  client: DirectUsbMuxClient,
-  ipaFile: File,
-  log: (message: string) => void,
-): Promise<void> => {
-  const rawData = new Uint8Array(await ipaFile.arrayBuffer())
-  const safeFileName = webmuxdSanitizeIpaFileName(ipaFile.name)
-  await webmuxdInstallIpaViaInstProxy(client, rawData, safeFileName, log)
-}
-
-const runFullInstallFlow = async (ipaFile: File): Promise<void> => {
-  if (installFlowInProgress) {
-    throw new Error("Install flow is already running")
-  }
-  installFlowInProgress = true
-
-  try {
-    addLog(`Full install start: ${ipaFile.name} (${ipaFile.size} bytes).`)
-
     const client = await ensureClientSelected()
 
-    let hostId = hostIdInput.value.trim()
-    let systemBuid = systemBuidInput.value.trim()
-
-    if (hostId.length === 0) {
-      hostId = getOrCreateHostId()
-      hostIdInput.value = hostId
-    }
-    if (systemBuid.length === 0) {
-      systemBuid = getOrCreateSystemBuid()
-      systemBuidInput.value = systemBuid
-    }
-
-    saveText(HOST_ID_STORAGE_KEY, hostId)
-    saveText(SYSTEM_BUID_STORAGE_KEY, systemBuid)
-
     if (!client.isHandshakeComplete) {
+      addLog("pair: opening mux handshake...")
       await client.openAndHandshake()
     }
     if (!client.isLockdownConnected) {
+      addLog("pair: connecting lockdownd...")
       await client.connectLockdown(LOCKDOWN_PORT)
     }
 
-    const deviceUdid = await client.getOrFetchDeviceUdid()
-    const deviceName = await client.getOrFetchDeviceName()
-    addLog(`Device UDID: ${deviceUdid}`)
-    if (deviceName) {
-      addLog(`Device Name: ${deviceName}`)
-    }
+    const udid = await client.getOrFetchDeviceUdid()
+    const name = await client.getOrFetchDeviceName()
 
-    const prepared = await prepareIpaForInstall(ipaFile, addLog, {
-      udid: deviceUdid,
-      name: deviceName ?? undefined,
-    })
+    let hostId = getOrCreateHostId()
+    let systemBuid = getOrCreateSystemBuid()
 
-    const storedPair = loadPairRecordForUdid(deviceUdid)
+    const storedPair = loadPairRecordForUdid(udid)
     if (storedPair && !client.isPaired) {
       client.loadPairRecord(storedPair)
       hostId = storedPair.hostId
       systemBuid = storedPair.systemBuid
-      hostIdInput.value = hostId
-      systemBuidInput.value = systemBuid
       saveText(HOST_ID_STORAGE_KEY, hostId)
       saveText(SYSTEM_BUID_STORAGE_KEY, systemBuid)
-      addLog(`Loaded pair record for device ${deviceUdid}.`)
+      addLog(`pair: loaded local pair record for ${udid}`)
     }
 
     if (!client.isPaired) {
+      addLog("pair: creating pair record...")
       const pairResult = await client.pairDevice(hostId, systemBuid)
-      savePairRecordForUdid(deviceUdid, pairResult)
-      addLog(`Pair success and pair record saved for ${deviceUdid}.`)
+      savePairRecordForUdid(udid, pairResult)
+      addLog("pair: success")
     }
 
     if (!client.isSessionStarted) {
       const session = await client.startSession(hostId, systemBuid)
-      addLog(
-        `StartSession success: SessionID=${session.sessionId}, EnableSessionSSL=${String(session.enableSessionSsl)}`,
-      )
+      addLog(`pair: session ready, ssl=${String(session.enableSessionSsl)}`)
     }
 
-    await installIpaViaInstProxy(client, prepared.installFile, addLog)
+    const changed = pairedDeviceInfo?.udid !== udid
+    pairedDeviceInfo = { udid, name }
+    if (changed) {
+      clearPreparedSigned()
+    }
+    addLog(`pair: udid=${udid}${name ? ` (${name})` : ""}`)
   } finally {
-    installFlowInProgress = false
+    busyPairing = false
+    refreshUi()
   }
 }
 
-const handleSelectedIpaFile = async (file: File): Promise<void> => {
-  addLog(`IPA selected: ${file.name} (${file.size} bytes).`)
-  refreshState()
+const ensureAnisetteData = async (): Promise<AnisetteData> => {
+  if (anisetteData) {
+    return anisetteData
+  }
+  addLog("login: init anisette...")
+  await provisionAnisette()
+  anisetteData = await getAnisetteData()
+  addLog(`login: anisette ready (${shortToken(anisetteData.machineID)})`)
+  return anisetteData
+}
+
+const loginAndSignFlow = async (): Promise<void> => {
+  if (busyLoginSign) {
+    return
+  }
+  busyLoginSign = true
+  let didSign = false
+  setInstallProgress(0, "starting")
+  refreshUi()
 
   try {
-    await runFullInstallFlow(file)
-  } catch (error) {
-    addLog(`Install IPA failed: ${formatError(error)}`)
+    const appleId = appleIdInput.value.trim()
+    const password = applePasswordInput.value
+    if (!appleId || !password) {
+      throw new Error("please input email and password")
+    }
+
+    saveText(APPLE_ID_STORAGE_KEY, appleId)
+
+    const anisette = await ensureAnisetteData()
+    addLog("login: authenticating Apple account...")
+    const context = await loginAppleDeveloperAccount({
+      anisetteData: anisette,
+      credentials: { appleId, password },
+      onLog: addLog,
+    })
+
+    loginContext = await refreshAppleDeveloperContext(context, addLog)
+    persistAccountSummary(loginContext)
+    clearPreparedSigned()
+    addLog("login: account ready")
+
+    if (selectedIpaFile && pairedDeviceInfo) {
+      await signSelectedIpa()
+      didSign = true
+    } else {
+      addLog("login: done. pair device and select ipa to complete signing")
+    }
   } finally {
-    refreshState()
+    busyLoginSign = false
+    if (!didSign) {
+      setInstallProgress(0, "idle")
+    }
+    refreshUi()
   }
 }
+
+const signSelectedIpa = async (): Promise<File> => {
+  if (!selectedIpaFile) {
+    throw new Error("no ipa selected")
+  }
+  if (!loginContext) {
+    throw new Error("not logged in")
+  }
+  if (!pairedDeviceInfo) {
+    throw new Error("device not paired")
+  }
+
+  const refreshed = await refreshAppleDeveloperContext(loginContext, addLog)
+  loginContext = refreshed
+  persistAccountSummary(refreshed)
+
+  addLog("sign: preparing ipa...")
+  const result = await signIpaWithAppleContext({
+    ipaFile: selectedIpaFile,
+    context: refreshed,
+    deviceUdid: pairedDeviceInfo.udid,
+    deviceName: pairedDeviceInfo.name ?? undefined,
+    onLog: addLog,
+  })
+
+  preparedSignedIpa = result.signedFile
+  preparedSourceKey = buildPreparedSourceKey(
+    selectedIpaFile,
+    pairedDeviceInfo.udid,
+    refreshed.team.identifier,
+  )
+  addLog(`sign: done -> ${preparedSignedIpa.name}`)
+  return preparedSignedIpa
+}
+
+const installFlow = async (): Promise<void> => {
+  if (busyInstall) {
+    return
+  }
+  busyInstall = true
+  installProgressIncludesSigning = false
+  setInstallProgress(0, "starting")
+  refreshUi()
+
+  try {
+    if (!selectedIpaFile) {
+      throw new Error("please drag/select ipa first")
+    }
+    if (!loginContext) {
+      throw new Error("please login first")
+    }
+    if (!pairedDeviceInfo) {
+      throw new Error("please pair device first")
+    }
+
+    const client = await ensureClientSelected()
+    if (!client.isSessionStarted) {
+      await pairDeviceFlow()
+    }
+
+    const currentSourceKey = buildPreparedSourceKey(
+      selectedIpaFile,
+      pairedDeviceInfo.udid,
+      loginContext.team.identifier,
+    )
+    installProgressIncludesSigning = !preparedSignedIpa || preparedSourceKey !== currentSourceKey
+    if (installProgressIncludesSigning) {
+      await signSelectedIpa()
+    }
+
+    const upload = preparedSignedIpa
+    if (!upload) {
+      throw new Error("signed ipa is missing")
+    }
+
+    addLog("install: uploading and installing...")
+    const bytes = new Uint8Array(await upload.arrayBuffer())
+    const safeName = webmuxdSanitizeIpaFileName(upload.name)
+    await webmuxdInstallIpaViaInstProxy(client, bytes, safeName, addLog)
+    addLog("install: complete")
+    setInstallProgress(100, "complete")
+  } catch (error) {
+    setInstallProgress(0, "failed")
+    throw error
+  } finally {
+    busyInstall = false
+    installProgressIncludesSigning = false
+    refreshUi()
+  }
+}
+
+const refreshUi = (): void => {
+  const summary = demoModeEnabled ? "hidden" : loadAccountSummaryText()
+  const ipaText = demoModeEnabled
+    ? selectedIpaFile
+      ? "selected"
+      : "none"
+    : selectedIpaFile
+      ? `${selectedIpaFile.name} (${selectedIpaFile.size} bytes)`
+      : "none"
+  const signedText = demoModeEnabled ? (preparedSignedIpa ? "prepared" : "none") : preparedSignedIpa ? preparedSignedIpa.name : "none"
+
+  deviceUdidView.textContent = demoModeEnabled ? "hidden" : pairedDeviceInfo?.udid ?? "-"
+  dropLabel.textContent = demoModeEnabled
+    ? selectedIpaFile
+      ? "ipa selected"
+      : "drag or select ipa"
+    : selectedIpaFile
+      ? selectedIpaFile.name
+      : "drag or select ipa"
+
+  statusLine.textContent = demoModeEnabled
+    ? "demo mode enabled | all sensitive details hidden"
+    : `webusb=${isSupported ? "ok" : "no"} | device=${pairedDeviceInfo ? "paired" : "-"} | ipa=${ipaText} | account=${summary} | signed=${signedText}`
+
+  pairDeviceButton.disabled = busyPairing || busyInstall || !isSupported
+  loginSignButton.disabled =
+    busyPairing || busyLoginSign || busyInstall || appleIdInput.value.trim().length === 0 || applePasswordInput.value.length === 0
+  installButton.disabled = busyPairing || busyLoginSign || busyInstall || !selectedIpaFile || !pairedDeviceInfo || !loginContext
+  refreshInstallProgressUi()
+}
+
+const renderLogView = (): void => {
+  logView.textContent = logLines.slice(-200).join("\n")
+}
+
+const setInstallProgress = (percent: number, status: string): void => {
+  installProgressPercent = Math.max(0, Math.min(100, Math.round(percent)))
+  installProgressStatus = status
+  refreshInstallProgressUi()
+}
+
+const refreshInstallProgressUi = (): void => {
+  installProgressBarView.style.width = `${installProgressPercent}%`
+  const text = busyInstall || busyLoginSign
+    ? `${installProgressStatus} · ${installProgressPercent}%`
+    : installProgressPercent === 0
+      ? "idle"
+      : `${installProgressStatus} · ${installProgressPercent}%`
+  installProgressTextView.textContent = text
+}
+
+const parseInstallProgress = (message: string): ProgressUpdate | null => {
+  const statusMatch = message.match(/InstProxy status:\s*([^,]+)(?:,|$)/i)
+  if (!statusMatch) {
+    return null
+  }
+  const status = statusMatch[1].trim()
+  const percentMatch = message.match(/Percent=(\d{1,3})%/i)
+  if (percentMatch) {
+    return { source: "install", percent: Number(percentMatch[1]), status }
+  }
+  if (status.toLowerCase() === "complete") {
+    return { source: "install", percent: 100, status }
+  }
+  return { source: "install", percent: installProgressPercent, status }
+}
+
+const parseSigningProgress = (message: string): ProgressUpdate | null => {
+  const lower = message.toLowerCase()
+  if (lower.includes("sign: preparing ipa")) {
+    return { source: "sign", percent: 8, status: "preparing ipa" }
+  }
+  if (lower.includes("signing stage: refreshing team")) {
+    return { source: "sign", percent: 14, status: "refreshing team" }
+  }
+  if (lower.includes("signing stage: refreshed team")) {
+    return { source: "sign", percent: 22, status: "team ready" }
+  }
+  if (lower.includes("signing stage: using team")) {
+    return { source: "sign", percent: 28, status: "using team" }
+  }
+  if (lower.includes("signing stage: creating development certificate")) {
+    return { source: "sign", percent: 36, status: "creating certificate" }
+  }
+  if (lower.includes("signing stage: using cached certificate")) {
+    return { source: "sign", percent: 40, status: "using certificate" }
+  }
+  if (lower.includes("signing stage: certificate ready")) {
+    return { source: "sign", percent: 48, status: "certificate ready" }
+  }
+  if (lower.includes("signing stage: registering device")) {
+    return { source: "sign", percent: 56, status: "registering device" }
+  }
+  if (
+    lower.includes("signing stage: device already registered") ||
+    lower.includes("signing stage: device registered") ||
+    lower.includes("signing stage: device confirmed")
+  ) {
+    return { source: "sign", percent: 62, status: "device ready" }
+  }
+  if (lower.includes("signing stage: creating app id") || lower.includes("signing stage: reuse app id")) {
+    return { source: "sign", percent: 72, status: "app id ready" }
+  }
+  if (lower.includes("signing stage: fetching provisioning profile")) {
+    return { source: "sign", percent: 82, status: "fetching profile" }
+  }
+  if (lower.includes("signing stage: resigning ipa")) {
+    return { source: "sign", percent: 90, status: "resigning ipa" }
+  }
+  if (lower.includes("signing stage: complete") || lower.includes("sign: done ->")) {
+    return { source: "sign", percent: 100, status: "complete" }
+  }
+  return null
+}
+
+const parseProgressFromLog = (message: string): ProgressUpdate | null => {
+  return parseInstallProgress(message) ?? parseSigningProgress(message)
+}
+
+const applyProgressUpdate = (update: ProgressUpdate): void => {
+  if (busyInstall && update.source === "sign") {
+    const mapped = installProgressIncludesSigning ? Math.round(update.percent * 0.55) : update.percent
+    setInstallProgress(mapped, `signing: ${update.status}`)
+    return
+  }
+  if (busyInstall && update.source === "install") {
+    const mapped = installProgressIncludesSigning
+      ? 55 + Math.round(update.percent * 0.45)
+      : update.percent
+    setInstallProgress(mapped, `installing: ${update.status}`)
+    return
+  }
+  if (update.source === "sign") {
+    setInstallProgress(update.percent, `signing: ${update.status}`)
+    return
+  }
+  setInstallProgress(update.percent, `installing: ${update.status}`)
+}
+
+const sanitizeDemoLogText = (text: string): string => {
+  return text
+    .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, "[email]")
+    .replace(/\budid=([A-Za-z0-9-]+)/gi, "udid=[hidden]")
+    .replace(/\b([A-Fa-f0-9]{24,64})\b/g, "[id]")
+    .replace(/(ipa selected:\s*).+/i, "$1[file]")
+    .replace(/(ipa dropped:\s*).+/i, "$1[file]")
+    .replace(/(sign: done ->\s*).+/i, "$1[file]")
+    .replace(/(loaded local pair record for\s+).+/i, "$1[udid]")
+    .replace(/(registering device\s+)[^\s]+(\s+as\s+).+/i, "$1[udid]$2[device]")
+    .replace(/(device (already )?registered \()[^)]+(\))/i, "$1[udid]$3")
+    .replace(/(team=)[^ ]+\s+\([^)]+\)/i, "$1[hidden]")
+    .replace(/(using team\s+)[^ ]+\s+\([^)]+\)/i, "$1[hidden]")
+}
+
+const applyDemoMode = (): void => {
+  document.body.classList.toggle("demo-mode", demoModeEnabled)
+  demoModeToggle.checked = demoModeEnabled
+  appleIdInput.type = demoModeEnabled ? "password" : "email"
+  appleIdInput.autocomplete = demoModeEnabled ? "off" : "username"
+  appleIdInput.placeholder = demoModeEnabled ? "hidden in demo mode" : "your apple id"
+  applePasswordInput.placeholder = demoModeEnabled
+    ? "hidden in demo mode"
+    : "app-specific password"
+  if (demoModeEnabled) {
+    for (let index = 0; index < logLines.length; index += 1) {
+      logLines[index] = sanitizeDemoLogText(logLines[index])
+    }
+  }
+  renderLogView()
+  refreshInstallProgressUi()
+}
+
+const loadAccountSummaryText = (): string => {
+  if (loginContext) {
+    return `${loginContext.appleId} / ${loginContext.team.identifier}`
+  }
+  const stored = loadStoredAccountSummary()
+  if (!stored) {
+    return "-"
+  }
+  return `${stored.appleId} / ${stored.teamId}`
+}
+
+pairDeviceButton.addEventListener("click", async () => {
+  try {
+    await pairDeviceFlow()
+  } catch (error) {
+    addLog(`pair failed: ${formatError(error)}`)
+    refreshUi()
+  }
+})
+
+loginSignButton.addEventListener("click", async () => {
+  try {
+    await loginAndSignFlow()
+  } catch (error) {
+    addLog(`login/sign failed: ${formatError(error)}`)
+    refreshUi()
+  }
+})
+
+installButton.addEventListener("click", async () => {
+  try {
+    await installFlow()
+  } catch (error) {
+    addLog(`install failed: ${formatError(error)}`)
+    refreshUi()
+  }
+})
 
 appleIdInput.addEventListener("change", () => {
   saveText(APPLE_ID_STORAGE_KEY, appleIdInput.value.trim())
+  refreshUi()
 })
 
-signBundleIdInput.addEventListener("change", () => {
-  saveText(SIGN_BUNDLE_ID_STORAGE_KEY, signBundleIdInput.value.trim())
+demoModeToggle.addEventListener("change", () => {
+  demoModeEnabled = demoModeToggle.checked
+  saveText(DEMO_MODE_STORAGE_KEY, demoModeEnabled ? "1" : "0")
+  applyDemoMode()
+  addLog(demoModeEnabled ? "demo mode enabled" : "demo mode disabled")
+  refreshUi()
 })
 
-signDisplayNameInput.addEventListener("change", () => {
-  saveText(SIGN_DISPLAY_NAME_STORAGE_KEY, signDisplayNameInput.value.trim())
+ipaFileInput.addEventListener("change", () => {
+  selectedIpaFile = ipaFileInput.files && ipaFileInput.files.length > 0 ? ipaFileInput.files[0] : null
+  clearPreparedSigned()
+  addLog(selectedIpaFile ? `ipa selected: ${selectedIpaFile.name}` : "ipa selection cleared")
+  refreshUi()
 })
 
-ipaFileInput.addEventListener("change", async () => {
-  const file = ipaFileInput.files && ipaFileInput.files.length > 0 ? ipaFileInput.files[0] : null
-  if (!file) {
-    addLog("IPA selection cleared.")
-    refreshState()
-    return
-  }
-  await handleSelectedIpaFile(file)
-})
-
-ipaDropZone.addEventListener("dragenter", (event) => {
+dropArea.addEventListener("dragenter", (event) => {
   event.preventDefault()
-  ipaDropZone.classList.add("dragover")
+  dropArea.classList.add("dragover")
 })
 
-ipaDropZone.addEventListener("dragover", (event) => {
+dropArea.addEventListener("dragover", (event) => {
   event.preventDefault()
-  ipaDropZone.classList.add("dragover")
+  dropArea.classList.add("dragover")
 })
 
-ipaDropZone.addEventListener("dragleave", () => {
-  ipaDropZone.classList.remove("dragover")
+dropArea.addEventListener("dragleave", () => {
+  dropArea.classList.remove("dragover")
 })
 
-ipaDropZone.addEventListener("drop", async (event) => {
+dropArea.addEventListener("drop", (event) => {
   event.preventDefault()
-  ipaDropZone.classList.remove("dragover")
-
+  dropArea.classList.remove("dragover")
   const file = event.dataTransfer?.files?.[0] ?? null
   if (!file) {
-    addLog("Drop ignored: no file.")
+    addLog("drop ignored: no file")
     return
   }
-  await handleSelectedIpaFile(file)
+  selectedIpaFile = file
+  clearPreparedSigned()
+  addLog(`ipa dropped: ${file.name}`)
+  refreshUi()
 })
 
 window.addEventListener("beforeunload", () => {
   void directClient?.close()
 })
 
-addLog("Demo ready.")
-refreshState()
+applyDemoMode()
+addLog("ready")
+refreshUi()
+
+function buildPreparedSourceKey(file: File, udid: string, teamId: string): string {
+  return `${file.name}:${file.size}:${file.lastModified}:${udid}:${teamId}`
+}
 
 function mustGetElement(id: string): HTMLElement {
   const element = document.getElementById(id)
@@ -614,6 +826,14 @@ function mustGetInput(id: string): HTMLInputElement {
   const element = document.getElementById(id)
   if (!element || !(element instanceof HTMLInputElement)) {
     throw new Error(`Input #${id} not found`)
+  }
+  return element
+}
+
+function mustGetButton(id: string): HTMLButtonElement {
+  const element = document.getElementById(id)
+  if (!element || !(element instanceof HTMLButtonElement)) {
+    throw new Error(`Button #${id} not found`)
   }
   return element
 }
@@ -748,6 +968,35 @@ function shortToken(value: string): string {
     return text
   }
   return `${text.slice(0, 6)}...${text.slice(-4)}`
+}
+
+function persistAccountSummary(context: AppleDeveloperContext): void {
+  const payload: StoredAccountSummary = {
+    appleId: context.appleId,
+    teamId: context.team.identifier,
+    teamName: context.team.name,
+    updatedAtIso: new Date().toISOString(),
+  }
+  saveText(APPLE_ACCOUNT_SUMMARY_STORAGE_KEY, JSON.stringify(payload))
+}
+
+function loadStoredAccountSummary(): StoredAccountSummary | null {
+  const raw = loadText(APPLE_ACCOUNT_SUMMARY_STORAGE_KEY)
+  if (!raw) {
+    return null
+  }
+  try {
+    const parsed = JSON.parse(raw) as StoredAccountSummary
+    if (!parsed || typeof parsed !== "object") {
+      return null
+    }
+    if (!parsed.appleId || !parsed.teamId || !parsed.teamName) {
+      return null
+    }
+    return parsed
+  } catch {
+    return null
+  }
 }
 
 function formatError(error: unknown): string {
