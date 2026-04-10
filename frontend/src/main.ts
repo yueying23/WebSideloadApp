@@ -1,121 +1,35 @@
 import "./style.css"
-import * as webmuxdModule from "webmuxd"
 import {
-  initAnisette,
-  getAnisetteData,
-  provisionAnisette,
-  type AnisetteData,
-} from "./anisette-service"
-import {
-  loginAppleDeveloperAccount,
-  refreshAppleDeveloperContext,
-  signIpaWithAppleContext,
-  type AppleDeveloperContext,
-} from "./apple-signing"
+  DirectUsbMuxClient,
+  LOCKDOWN_PORT,
+  WebUsbTransport,
+  createHostId,
+  createOpenSslWasmTlsFactory,
+  createSystemBuid,
+  decodeStoredPairRecord,
+  encodeStoredPairRecord,
+  generatePairRecordWithOpenSslWasm,
+  installIpaViaInstProxy,
+  sanitizeIpaFileName,
+  type PairRecord,
+  type StoredPairRecordPayload,
+} from "webmuxd"
+import type { AnisetteData } from "./anisette-service"
+import type { AppleDeveloperContext } from "./apple-signing"
 
-interface WebUsbTransportInstance {
-  readonly isOpen: boolean
-  open(): Promise<void>
-  close(): Promise<void>
-  send(data: ArrayBuffer): Promise<void>
-  setDataHandler(handler: ((data: ArrayBuffer) => void) | null): void
-  setDisconnectHandler(handler: ((reason?: unknown) => void) | null): void
-}
+type WasmPairRecordPayload = Pick<
+  PairRecord,
+  | "hostId"
+  | "systemBuid"
+  | "hostCertificatePem"
+  | "hostPrivateKeyPem"
+  | "rootCertificatePem"
+  | "rootPrivateKeyPem"
+  | "deviceCertificatePem"
+>
 
-interface WebUsbTransportCtor {
-  supported(): boolean
-  requestAppleDevice(): Promise<WebUsbTransportInstance>
-}
-
-interface PairRecord {
-  hostId: string
-  systemBuid: string
-  hostCertificatePem: string
-  hostPrivateKeyPem: string
-  rootCertificatePem: string
-  rootPrivateKeyPem: string
-  deviceCertificatePem: string
-  devicePublicKey: Uint8Array
-  escrowBag?: Uint8Array
-}
-
-interface StoredPairRecordPayload {
-  hostId: string
-  systemBuid: string
-  hostCertificatePem: string
-  hostPrivateKeyPem: string
-  rootCertificatePem: string
-  rootPrivateKeyPem: string
-  deviceCertificatePem: string
-  devicePublicKey: string
-  escrowBag: string | null
-}
-
-interface StartSessionResult {
-  sessionId: string
-  enableSessionSsl: boolean
-}
-
-interface DirectUsbMuxClient {
-  readonly isHandshakeComplete: boolean
-  readonly isLockdownConnected: boolean
-  readonly isSessionStarted: boolean
-  readonly isSessionSslEnabled: boolean
-  readonly isTlsActive: boolean
-  readonly isPaired: boolean
-  loadPairRecord(record: PairRecord | null): void
-  openAndHandshake(): Promise<void>
-  connectLockdown(port?: number): Promise<void>
-  getOrFetchDeviceUdid(): Promise<string>
-  getOrFetchDeviceName(): Promise<string | null>
-  pairDevice(hostId: string, systemBuid: string): Promise<PairRecord>
-  startSession(hostId: string, systemBuid: string): Promise<StartSessionResult>
-  close(): Promise<void>
-}
-
-interface DirectUsbMuxClientCtor {
-  new (
-    transport: WebUsbTransportInstance,
-    options?: {
-      log?: (message: string) => void
-      onStateChange?: () => void
-      lockdownLabel?: string
-      tlsFactory?: {
-        ensureReady?: () => Promise<void>
-        createConnection(request: {
-          serverName: string
-          caCertificatePem: string
-          certificatePem: string
-          privateKeyPem: string
-        }): {
-          is_handshaking(): boolean
-          write_plaintext(data: Uint8Array): void
-          feed_tls(data: Uint8Array): void
-          take_tls_out(): Uint8Array
-          take_plain_out(): Uint8Array
-          free(): void
-        }
-      }
-      pairRecordFactory?: {
-        createPairRecord(request: {
-          devicePublicKey: Uint8Array
-          hostId: string
-          systemBuid: string
-        }): Promise<PairRecord>
-      }
-    },
-  ): DirectUsbMuxClient
-}
-
-interface WasmPairRecordPayload {
-  hostId: string
-  systemBuid: string
-  hostCertificatePem: string
-  hostPrivateKeyPem: string
-  rootCertificatePem: string
-  rootPrivateKeyPem: string
-  deviceCertificatePem: string
-}
+type AnisetteServiceModule = typeof import("./anisette-service")
+type AppleSigningModule = typeof import("./apple-signing")
 
 interface PairedDeviceInfo {
   udid: string
@@ -162,8 +76,6 @@ interface StoredAccountSessionPayload {
 
 type AppPage = "login" | "sign"
 
-const LOCKDOWN_PORT = 62078
-
 const HOST_ID_STORAGE_KEY = "webmuxd:host-id"
 const SYSTEM_BUID_STORAGE_KEY = "webmuxd:system-buid"
 const PAIR_RECORDS_STORAGE_KEY = "webmuxd:pair-records-by-udid"
@@ -177,67 +89,24 @@ const SELECTED_DEVICE_UDID_STORAGE_KEY = "webmuxd:selected-device-udid"
 const LOGIN_PAGE_HASH = "#/login"
 const SIGN_PAGE_HASH = "#/sign"
 
-const webmuxdModuleValue = webmuxdModule as unknown as Record<string, unknown>
+let anisetteServicePromise: Promise<AnisetteServiceModule> | null = null
+let appleSigningModulePromise: Promise<AppleSigningModule> | null = null
 
-const WebUsbTransport = resolveWebmuxdExport<WebUsbTransportCtor>(
-  webmuxdModuleValue,
-  "WebUsbTransport",
-)
-const WebmuxdDirectUsbMuxClient = resolveWebmuxdExport<DirectUsbMuxClientCtor>(
-  webmuxdModuleValue,
-  "DirectUsbMuxClient",
-)
-const webmuxdInstallIpaViaInstProxy = resolveWebmuxdExport<
-  (
-    client: DirectUsbMuxClient,
-    ipaData: Uint8Array,
-    fileName: string,
-    onLog?: (message: string) => void,
-  ) => Promise<void>
->(webmuxdModuleValue, "installIpaViaInstProxy")
-const webmuxdSanitizeIpaFileName = resolveWebmuxdExport<(fileName: string) => string>(
-  webmuxdModuleValue,
-  "sanitizeIpaFileName",
-)
-const webmuxdCreateHostId = resolveWebmuxdExport<() => string>(
-  webmuxdModuleValue,
-  "createHostId",
-)
-const webmuxdCreateSystemBuid = resolveWebmuxdExport<() => string>(
-  webmuxdModuleValue,
-  "createSystemBuid",
-)
-const webmuxdEncodeStoredPairRecord = resolveWebmuxdExport<
-  (record: PairRecord) => StoredPairRecordPayload
->(webmuxdModuleValue, "encodeStoredPairRecord")
-const webmuxdDecodeStoredPairRecord = resolveWebmuxdExport<
-  (payload: StoredPairRecordPayload) => PairRecord | null
->(webmuxdModuleValue, "decodeStoredPairRecord")
-const webmuxdCreateOpenSslWasmTlsFactory = resolveWebmuxdExport<
-  () => {
-    ensureReady?(): Promise<void>
-    createConnection(request: {
-      serverName: string
-      caCertificatePem: string
-      certificatePem: string
-      privateKeyPem: string
-    }): {
-      is_handshaking(): boolean
-      write_plaintext(data: Uint8Array): void
-      feed_tls(data: Uint8Array): void
-      take_tls_out(): Uint8Array
-      take_plain_out(): Uint8Array
-      free(): void
-    }
+const loadAnisetteService = async (): Promise<AnisetteServiceModule> => {
+  if (!anisetteServicePromise) {
+    anisetteServicePromise = import("./anisette-service")
   }
->(webmuxdModuleValue, "createOpenSslWasmTlsFactory")
-const webmuxdGeneratePairRecordWithOpenSslWasm = resolveWebmuxdExport<
-  (request: {
-    devicePublicKey: Uint8Array
-    hostId: string
-    systemBuid: string
-  }) => Promise<string>
->(webmuxdModuleValue, "generatePairRecordWithOpenSslWasm")
+
+  return await anisetteServicePromise
+}
+
+const loadAppleSigningModule = async (): Promise<AppleSigningModule> => {
+  if (!appleSigningModulePromise) {
+    appleSigningModulePromise = import("./apple-signing")
+  }
+
+  return await appleSigningModulePromise
+}
 
 const app = document.querySelector<HTMLDivElement>("#app")
 if (!app) {
@@ -586,11 +455,11 @@ const ensureClientSelected = async (): Promise<DirectUsbMuxClient> => {
   }
 
   const transport = await WebUsbTransport.requestAppleDevice()
-  directClient = new WebmuxdDirectUsbMuxClient(transport, {
+  directClient = new DirectUsbMuxClient(transport, {
     log: addLog,
     onStateChange: refreshUi,
     lockdownLabel: "webmuxd.frontend",
-    tlsFactory: webmuxdCreateOpenSslWasmTlsFactory(),
+    tlsFactory: createOpenSslWasmTlsFactory(),
     pairRecordFactory: {
       createPairRecord: async (request) => {
         return await createPairRecord(request.devicePublicKey, request.hostId, request.systemBuid)
@@ -681,19 +550,20 @@ const ensureAnisetteData = async (): Promise<AnisetteData> => {
     return anisetteData
   }
 
-  const anisette = await initAnisette()
+  const anisetteService = await loadAnisetteService()
+  const anisette = await anisetteService.initAnisette()
   const alreadyProvisioned = anisette.isProvisioned
   anisetteProvisioned = alreadyProvisioned
   if (alreadyProvisioned) {
     addLog("login: anisette already provisioned")
   } else {
     addLog("login: preparing anisette environment...")
-    await provisionAnisette()
+    await anisetteService.provisionAnisette()
     anisetteProvisioned = true
     addLog("login: anisette provisioned")
   }
 
-  anisetteData = await getAnisetteData()
+  anisetteData = await anisetteService.getAnisetteData()
   addLog(`login: anisette ready (${shortToken(anisetteData.machineID)})`)
   refreshUi()
   return anisetteData
@@ -701,7 +571,8 @@ const ensureAnisetteData = async (): Promise<AnisetteData> => {
 
 const syncAnisetteProvisionedStatus = async (): Promise<void> => {
   try {
-    const anisette = await initAnisette()
+    const anisetteService = await loadAnisetteService()
+    const anisette = await anisetteService.initAnisette()
     anisetteProvisioned = anisette.isProvisioned
     refreshUi()
   } catch (error) {
@@ -727,7 +598,8 @@ const loginAndSignFlow = async (): Promise<void> => {
 
     const anisette = await ensureAnisetteData()
     addLog("login: authenticating Apple account...")
-    const context = await loginAppleDeveloperAccount({
+    const appleSigning = await loadAppleSigningModule()
+    const context = await appleSigning.loginAppleDeveloperAccount({
       anisetteData: anisette,
       credentials: { appleId, password },
       onLog: addLog,
@@ -736,7 +608,7 @@ const loginAndSignFlow = async (): Promise<void> => {
       },
     })
 
-    loginContext = await refreshAppleDeveloperContext(context, addLog)
+    loginContext = await appleSigning.refreshAppleDeveloperContext(context, addLog)
     accountContextMap.set(accountKey(loginContext.appleId, loginContext.team.identifier), loginContext)
     persistAccountSummary(loginContext)
     if (rememberSessionInput.checked) {
@@ -781,7 +653,8 @@ const signSelectedIpa = async (): Promise<File> => {
     },
   }
 
-  const refreshed = await refreshAppleDeveloperContext(loginContext, addLog)
+  const appleSigning = await loadAppleSigningModule()
+  const refreshed = await appleSigning.refreshAppleDeveloperContext(loginContext, addLog)
   loginContext = refreshed
   accountContextMap.set(accountKey(refreshed.appleId, refreshed.team.identifier), refreshed)
   persistAccountSummary(refreshed)
@@ -790,7 +663,7 @@ const signSelectedIpa = async (): Promise<File> => {
   }
 
   addLog("sign: preparing ipa...")
-  const result = await signIpaWithAppleContext({
+  const result = await appleSigning.signIpaWithAppleContext({
     ipaFile: selectedIpaFile,
     context: refreshed,
     deviceUdid: targetUdid,
@@ -868,8 +741,8 @@ const installFlow = async (): Promise<void> => {
 
     addLog("install: uploading and installing...")
     const bytes = new Uint8Array(await upload.arrayBuffer())
-    const safeName = webmuxdSanitizeIpaFileName(upload.name)
-    await webmuxdInstallIpaViaInstProxy(client, bytes, safeName, addLog)
+    const safeName = sanitizeIpaFileName(upload.name)
+    await installIpaViaInstProxy(client, bytes, safeName, addLog)
     addLog("install: complete")
     setInstallProgress(100, "complete")
   } catch (error) {
@@ -1405,7 +1278,7 @@ function getOrCreateHostId(): string {
   if (existing && existing.trim().length > 0) {
     return existing
   }
-  const created = webmuxdCreateHostId()
+  const created = createHostId()
   saveText(HOST_ID_STORAGE_KEY, created)
   return created
 }
@@ -1415,7 +1288,7 @@ function getOrCreateSystemBuid(): string {
   if (existing && existing.trim().length > 0) {
     return existing
   }
-  const created = webmuxdCreateSystemBuid()
+  const created = createSystemBuid()
   saveText(SYSTEM_BUID_STORAGE_KEY, created)
   return created
 }
@@ -1446,7 +1319,7 @@ function savePairRecordForUdid(udid: string, record: PairRecord): void {
     return
   }
   const map = readPairRecordMap()
-  map[normalizedUdid] = webmuxdEncodeStoredPairRecord(record)
+  map[normalizedUdid] = encodeStoredPairRecord(record)
   writePairRecordMap(map)
 }
 
@@ -1457,7 +1330,7 @@ function loadLegacyPairRecord(): PairRecord | null {
   }
   try {
     const parsed = JSON.parse(text) as StoredPairRecordPayload
-    return webmuxdDecodeStoredPairRecord(parsed)
+    return decodeStoredPairRecord(parsed)
   } catch {
     return null
   }
@@ -1473,7 +1346,7 @@ function loadPairRecordForUdid(udid: string): PairRecord | null {
   const fromMap = map[normalizedUdid]
   if (fromMap) {
     try {
-      return webmuxdDecodeStoredPairRecord(fromMap)
+      return decodeStoredPairRecord(fromMap)
     } catch {
       return null
     }
@@ -1492,7 +1365,7 @@ async function createPairRecord(
   hostId: string,
   systemBuid: string,
 ): Promise<PairRecord> {
-  const payloadText = await webmuxdGeneratePairRecordWithOpenSslWasm({
+  const payloadText = await generatePairRecordWithOpenSslWasm({
     devicePublicKey: devicePublicKeyBytes,
     hostId,
     systemBuid,
@@ -1762,21 +1635,4 @@ function formatError(error: unknown): string {
     return error.message
   }
   return String(error)
-}
-
-function resolveWebmuxdExport<T>(moduleValue: Record<string, unknown>, key: string): T {
-  const direct = moduleValue[key]
-  if (direct !== undefined) {
-    return direct as T
-  }
-
-  const defaultValue = moduleValue.default
-  if (defaultValue && typeof defaultValue === "object") {
-    const fromDefault = (defaultValue as Record<string, unknown>)[key]
-    if (fromDefault !== undefined) {
-      return fromDefault as T
-    }
-  }
-
-  throw new Error(`webmuxd export ${key} is unavailable`)
 }

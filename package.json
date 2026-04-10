@@ -5,13 +5,20 @@
   "workspaces": [
     "frontend",
     "backend",
-    "dependencies/webmuxd"
+    "dependencies/webmuxd",
+    "wasm/openssl",
+    "wasm/libcurl-wasm",
+    "wasm/zsign-wasm"
   ],
   "scripts": {
     "build": "cd dependencies/webmuxd && bun run build",
     "build:webmuxd": "cd dependencies/webmuxd && bun run build",
     "build:frontend": "cd frontend && bun run build",
     "build:backend": "cd backend && bun run check",
+    "build:wasm": "bun run build:wasm:openssl && bun run build:wasm:libcurl && bun run build:wasm:zsign",
+    "build:wasm:openssl": "bash scripts/build-wasm-openssl.sh",
+    "build:wasm:libcurl": "bash scripts/build-wasm-libcurl.sh",
+    "build:wasm:zsign": "bash scripts/build-wasm-zsign.sh",
     "lint": "cd dependencies/webmuxd && bun run lint",
     "test": "cd dependencies/webmuxd && bun run test"
   }

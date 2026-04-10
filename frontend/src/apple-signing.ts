@@ -1,13 +1,14 @@
 import { strFromU8, unzipSync } from "fflate"
-import {
-  type AnisetteData,
-  type AppleAPI,
-  type AppID,
-  type Certificate,
-  type Device,
-  type Team,
+import type {
+  AnisetteData,
+  AppleAPI,
+  AppID,
+  Certificate,
+  Device,
+  Team,
 } from "altsign.js"
-import { initLibcurl, libcurl } from "./anisette-libcurl-init"
+import { initLibcurl } from "./anisette-libcurl-init"
+import { requireLibcurl } from "./wasm/libcurl"
 
 const SIGNING_IDENTITY_STORAGE_KEY = "webmuxd:signing-identities"
 const PRIMARY_APP_INFO_PLIST_RE = /^Payload\/[^/]+\.app\/Info\.plist$/
@@ -129,6 +130,7 @@ async function getAppleApi(): Promise<AppleAPI> {
   }
   const { AppleAPI, Fetch } = await loadAltsignModule()
   const appleFetch = new Fetch(initLibcurl, async (url, options) => {
+    const libcurl = requireLibcurl()
     const response = await libcurl.fetch(url, {
       method: options.method,
       headers: options.headers,

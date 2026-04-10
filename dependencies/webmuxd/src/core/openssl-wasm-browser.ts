@@ -1,49 +1,34 @@
 import type { TlsConnection, TlsConnectionFactory } from "./imobiledevice-client"
+import type {
+  OpenSslWasmConnectionRequest,
+  OpenSslWasmPairRecordRequest,
+} from "./openssl-wasm"
 
-export interface OpenSslWasmConnectionRequest {
-  serverName: string
-  caCertificatePem: string
-  certificatePem: string
-  privateKeyPem: string
-}
-
-export interface OpenSslWasmPairRecordRequest {
-  devicePublicKey: Uint8Array
-  hostId: string
-  systemBuid: string
-}
-
-interface OpenSslWasmModule {
+interface OpenSslWasmBrowserModule {
   default(input?: unknown): Promise<unknown>
-  opensslClientConstructor: new (
+  OpensslClient: new (
     serverName: string,
     caCertificatePem: string,
     certificatePem: string,
     privateKeyPem: string,
   ) => TlsConnection
-  generatePairRecord(
+  libimobiledevice_generate_pair_record(
     devicePublicKey: Uint8Array,
     hostId: string,
     systemBuid: string,
   ): string
 }
 
-const OPENSSL_WASM_MODULE_SPECIFIER = "../openssl-wasm/dist/index.mjs"
+const OPENSSL_WASM_MODULE_URL = new URL(
+  "../openssl-wasm/dist/index.mjs",
+  import.meta.url,
+)
 
-/**
- * Keep native `import()` intact in the CommonJS build so bundlers can defer the
- * large wasm glue file until TLS or pairing is actually requested.
- */
-// eslint-disable-next-line @typescript-eslint/no-implied-eval
-const dynamicImport = new Function("specifier", "return import(specifier)") as (
-  specifier: string,
-) => Promise<unknown>
-
-let opensslWasmModule: OpenSslWasmModule | null = null
-let opensslWasmModulePromise: Promise<OpenSslWasmModule> | null = null
+let opensslWasmModule: OpenSslWasmBrowserModule | null = null
+let opensslWasmModulePromise: Promise<OpenSslWasmBrowserModule> | null = null
 let opensslWasmInitPromise: Promise<void> | null = null
 
-const toOpenSslWasmModule = (moduleValue: unknown): OpenSslWasmModule => {
+const toOpenSslWasmModule = (moduleValue: unknown): OpenSslWasmBrowserModule => {
   if (!moduleValue || typeof moduleValue !== "object") {
     throw new Error("OpenSSL wasm module did not return an object")
   }
@@ -59,30 +44,25 @@ const toOpenSslWasmModule = (moduleValue: unknown): OpenSslWasmModule => {
     throw new Error("OpenSSL wasm module is missing pair record generation")
   }
 
-  return {
-    default: candidate.default as OpenSslWasmModule["default"],
-    opensslClientConstructor:
-      candidate.OpensslClient as OpenSslWasmModule["opensslClientConstructor"],
-    generatePairRecord:
-      candidate.libimobiledevice_generate_pair_record as OpenSslWasmModule["generatePairRecord"],
-  }
+  return candidate as unknown as OpenSslWasmBrowserModule
 }
 
-const loadOpenSslWasmModule = async (): Promise<OpenSslWasmModule> => {
+const loadOpenSslWasmModule = async (): Promise<OpenSslWasmBrowserModule> => {
   if (!opensslWasmModulePromise) {
-    opensslWasmModulePromise = dynamicImport(OPENSSL_WASM_MODULE_SPECIFIER).then(
-      (moduleValue) => {
-        const loadedModule = toOpenSslWasmModule(moduleValue)
-        opensslWasmModule = loadedModule
-        return loadedModule
-      },
-    )
+    opensslWasmModulePromise = import(
+      /* @vite-ignore */
+      OPENSSL_WASM_MODULE_URL.href
+    ).then((moduleValue) => {
+      const loadedModule = toOpenSslWasmModule(moduleValue)
+      opensslWasmModule = loadedModule
+      return loadedModule
+    })
   }
 
   return await opensslWasmModulePromise
 }
 
-const requireOpenSslWasmModule = (): OpenSslWasmModule => {
+const requireOpenSslWasmModule = (): OpenSslWasmBrowserModule => {
   if (!opensslWasmModule) {
     throw new Error("OpenSSL wasm is not ready. Call ensureOpenSslWasmReady() first.")
   }
@@ -104,7 +84,7 @@ export const createOpenSslWasmConnection = (
   request: OpenSslWasmConnectionRequest,
 ): TlsConnection => {
   const moduleValue = requireOpenSslWasmModule()
-  return new moduleValue.opensslClientConstructor(
+  return new moduleValue.OpensslClient(
     request.serverName,
     request.caCertificatePem,
     request.certificatePem,
@@ -124,7 +104,7 @@ export const generatePairRecordWithOpenSslWasm = async (
 ): Promise<string> => {
   await ensureOpenSslWasmReady()
   const moduleValue = requireOpenSslWasmModule()
-  return moduleValue.generatePairRecord(
+  return moduleValue.libimobiledevice_generate_pair_record(
     new Uint8Array(request.devicePublicKey),
     request.hostId,
     request.systemBuid,

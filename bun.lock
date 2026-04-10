@@ -41,10 +41,11 @@
       "version": "0.0.0",
       "dependencies": {
         "@lbr77/anisette-js": "0.1.3",
-        "@lbr77/zsign-wasm-resigner-wrapper": "^0.1.5",
+        "@lbr77/zsign-wasm-resigner-wrapper": "workspace:*",
         "altsign.js": "^0.1.2",
         "fflate": "^0.8.2",
         "jszip": "^3.10.1",
+        "libcurl.js": "workspace:*",
         "node-forge": "^1.3.3",
         "webmuxd": "workspace:*",
       },
@@ -53,6 +54,25 @@
         "tailwindcss": "^4.2.1",
         "typescript": "~5.9.3",
         "vite": "^7.3.1",
+      },
+    },
+    "wasm/libcurl-wasm": {
+      "name": "libcurl.js",
+      "version": "0.7.4",
+    },
+    "wasm/openssl": {
+      "name": "@lbr77/openssl-wasm",
+      "version": "0.1.0",
+    },
+    "wasm/zsign-wasm": {
+      "name": "@lbr77/zsign-wasm-resigner-wrapper",
+      "version": "0.1.0",
+      "dependencies": {
+        "jszip": "^3.10.1",
+      },
+      "devDependencies": {
+        "@types/node": "^25.5.2",
+        "typescript": "~5.9.3",
       },
     },
   },
@@ -295,7 +315,9 @@
 
     "@lbr77/anisette-js": ["@lbr77/anisette-js@0.1.3", "", { "dependencies": { "@types/node": "^25.3.2" } }, "sha512-QzZQB/XzMV68ykaj6yU2aPGmDrhE0wJEmSfMJu0VQ5zhfhrv7G2zrHJGUum226jZ//lYJeMSrzmDaI/NgFVIgg=="],
 
-    "@lbr77/zsign-wasm-resigner-wrapper": ["@lbr77/zsign-wasm-resigner-wrapper@0.1.5", "", { "dependencies": { "@types/node": "^25.3.2", "jszip": "^3.10.1" } }, "sha512-oVmRgkrSccDXpS9rlBKc0LWQzqcEFiTQod5ZaKIcyIp3rtwROgc1Tqwrr/7oLVQNdq8jI79lbnCoa1J34AaUqw=="],
+    "@lbr77/openssl-wasm": ["@lbr77/openssl-wasm@workspace:wasm/openssl"],
+
+    "@lbr77/zsign-wasm-resigner-wrapper": ["@lbr77/zsign-wasm-resigner-wrapper@workspace:wasm/zsign-wasm"],
 
     "@mercuryworkshop/wisp-js": ["@mercuryworkshop/wisp-js@0.4.1", "", { "dependencies": { "bufferutil": "^4.0.9", "commander": "^14.0.2", "ipaddr.js": "^2.3.0", "ws": "^8.18.3" }, "bin": { "wisp-js-server": "src/bin/server_cli.mjs" } }, "sha512-104LwiXiuhti/e32gmv0Da0u0yuLFDHX8JawCzleTPWJ5t5qTX4EYi4E7/ucbjBPN9wwVPWHE5g5yGqzl/NzQA=="],
 
@@ -923,6 +945,8 @@
 
     "levn": ["levn@0.4.1", "", { "dependencies": { "prelude-ls": "^1.2.1", "type-check": "~0.4.0" } }, "sha512-+bT2uH4E5LGE7h/n3evcS/sQlJXCpIp6ym8OWJ5eV6+67Dsql/LaaT7qJBAt2rzfoa/5QBGBhxDix1dMt2kQKQ=="],
 
+    "libcurl.js": ["libcurl.js@workspace:wasm/libcurl-wasm"],
+
     "lie": ["lie@3.3.0", "", { "dependencies": { "immediate": "~3.0.5" } }, "sha512-UaiMJzeWRlEujzAuw5LokY1L5ecNQYZKfmyZ9L7wDHb/p5etKaxXhohBcrw0EYby+G/NA52vRSN4N39dxHAIwQ=="],
 
     "lightningcss": ["lightningcss@1.32.0", "", { "dependencies": { "detect-libc": "^2.0.3" }, "optionalDependencies": { "lightningcss-android-arm64": "1.32.0", "lightningcss-darwin-arm64": "1.32.0", "lightningcss-darwin-x64": "1.32.0", "lightningcss-freebsd-x64": "1.32.0", "lightningcss-linux-arm-gnueabihf": "1.32.0", "lightningcss-linux-arm64-gnu": "1.32.0", "lightningcss-linux-arm64-musl": "1.32.0", "lightningcss-linux-x64-gnu": "1.32.0", "lightningcss-linux-x64-musl": "1.32.0", "lightningcss-win32-arm64-msvc": "1.32.0", "lightningcss-win32-x64-msvc": "1.32.0" } }, "sha512-NXYBzinNrblfraPGyrbPoD19C1h9lfI/1mzgWYvXUTe414Gz/X1FD2XBZSZM7rRTrMA8JL3OtAaGifrIKhQ5yQ=="],
@@ -1410,6 +1434,8 @@
     "@typescript-eslint/experimental-utils/eslint-scope": ["eslint-scope@5.1.1", "", { "dependencies": { "esrecurse": "^4.3.0", "estraverse": "^4.1.1" } }, "sha512-2NxwbF/hZ0KpepYN0cNbo+FN6XoK7GaHlQhgx/hIZl6Va0bF45RQOOwhLIy8lQDbuCiadSLCBnH2CFYquit5bw=="],
 
     "acorn-globals/acorn": ["acorn@7.4.1", "", { "bin": { "acorn": "bin/acorn" } }, "sha512-nQyp0o1/mNdbTO1PO6kHkwSrmgZ0MT/jCCpNiwbUjGoRN4dlBhqJtoQuCnEOKzgTVwg0ZWiCoQy6SxMebQVh8A=="],
+
+    "altsign.js/@lbr77/zsign-wasm-resigner-wrapper": ["@lbr77/zsign-wasm-resigner-wrapper@0.1.5", "", { "dependencies": { "@types/node": "^25.3.2", "jszip": "^3.10.1" } }, "sha512-oVmRgkrSccDXpS9rlBKc0LWQzqcEFiTQod5ZaKIcyIp3rtwROgc1Tqwrr/7oLVQNdq8jI79lbnCoa1J34AaUqw=="],
 
     "ansi-escapes/type-fest": ["type-fest@0.21.3", "", {}, "sha512-t0rzBq87m3fVcduHDUFhKmyyX+9eo6WQjZvf51Ea/M0Q7+T374Jp1aUiyUl0GKxp8M/OETVHSDvmkyPgvX+X2w=="],
 

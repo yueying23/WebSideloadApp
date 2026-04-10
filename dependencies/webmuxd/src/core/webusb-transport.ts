@@ -1,4 +1,4 @@
-import { CONSOLE_LOGGER, Logger, NULL_LOGGER } from "../webmuxd"
+import { CONSOLE_LOGGER, Logger, NULL_LOGGER } from "../logger"
 import { DataHandler, DisconnectHandler, UsbMuxTransport } from "./transport"
 
 const USBMUX_CLASS = 255

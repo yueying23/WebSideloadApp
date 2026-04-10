@@ -9,5 +9,11 @@
     "types": ["node", "w3c-web-usb"]
   },
   "include": ["src"],
-  "exclude": ["node_modules", "**/__tests__/*"]
+  "exclude": [
+    "node_modules",
+    "**/__tests__/*",
+    "src/browser.ts",
+    "src/core/openssl-wasm-browser.ts",
+    "src/openssl-wasm/**/*"
+  ]
 }

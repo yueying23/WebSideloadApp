@@ -1,0 +1,28 @@
+{
+  "name": "@lbr77/openssl-wasm",
+  "version": "0.1.0",
+  "description": "OpenSSL WebAssembly package with stable src/dist/binary layout.",
+  "type": "module",
+  "main": "./dist/index.mjs",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.mjs"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist/**/*",
+    "binary/**/*",
+    "README.md"
+  ],
+  "scripts": {
+    "build:binary": "bash ./build.sh",
+    "build:dist": "bun ./build.mjs",
+    "build": "bun run build:binary && bun run build:dist",
+    "clean": "rm -rf dist binary",
+    "prepack": "bun run build"
+  }
+}

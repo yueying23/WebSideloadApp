@@ -4,3 +4,6 @@
 [submodule "wasm/libcurl-wasm"]
 	path = wasm/libcurl-wasm
 	url = https://github.com/lbr77/libcurl.js
+[submodule "wasm/openssl-wasm"]
+	path = wasm/openssl-wasm
+	url = https://github.com/jedisct1/openssl-wasm

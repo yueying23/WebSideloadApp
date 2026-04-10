@@ -25,7 +25,8 @@
     "LICENSE"
   ],
   "scripts": {
-    "build": "tsc && bun run copy:openssl-wasm",
+    "build": "bun run build:openssl-wasm && tsc && bun run copy:openssl-wasm",
+    "build:openssl-wasm": "cd ../../wasm/openssl && bun run build",
     "copy:openssl-wasm": "bun scripts/copy-openssl-wasm.mjs",
     "prepare": "bun run build",
     "prepublishOnly": "bun run test && bun run lint",

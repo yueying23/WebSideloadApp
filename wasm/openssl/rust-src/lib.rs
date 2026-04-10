@@ -38,6 +38,15 @@ static COUNT_STAT: AtomicUsize = AtomicUsize::new(0);
 static COUNT_OPENDIR: AtomicUsize = AtomicUsize::new(0);
 static ARC4_FALLBACK_SEED: AtomicUsize = AtomicUsize::new(0x9E37_79B9);
 
+#[no_mangle]
+pub static mut errno: c_int = 0;
+
+#[no_mangle]
+pub static CLOCK_REALTIME: c_int = 0;
+
+#[no_mangle]
+pub static _CLOCK_REALTIME: c_int = 0;
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct PairRecordWasmOut {

@@ -18,16 +18,22 @@ export default defineConfig({
   },
   resolve: {
     alias: {
-      webmuxd: resolve(repoRootDir, "dependencies/webmuxd/lib/webmuxd.js"),
+      webmuxd: resolve(frontendDir, "src/webmuxd-browser.js"),
     },
-    preserveSymlinks: true,
   },
   optimizeDeps: {
-    include: ["@lbr77/anisette-js/browser"],
+    exclude: [
+      "altsign.js",
+      "@lbr77/anisette-js",
+      "@lbr77/anisette-js/browser",
+      "@lbr77/zsign-wasm-resigner-wrapper",
+      "libcurl.js",
+      "libcurl.js/bundled",
+    ],
   },
   build: {
     commonjsOptions: {
-      include: [/node_modules/, /\/lib\/webmuxd\.js/, /\/lib\/core\/.*\.js/],
+      include: [/node_modules/],
     },
   },
 })

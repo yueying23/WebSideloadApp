@@ -1,5 +1,4 @@
-// @ts-ignore
-import { libcurl } from "../public/anisette/libcurl_full.mjs"
+import { loadLibcurl, libcurl } from "./wasm/libcurl"
 
 let initialized = false
 let initPromise: Promise<void> | null = null
@@ -13,10 +12,11 @@ export async function initLibcurl(): Promise<void> {
   }
 
   initPromise = (async () => {
+    const loadedLibcurl = await loadLibcurl()
     const wsProto = location.protocol === "https:" ? "wss:" : "ws:"
     const wsUrl = `${wsProto}//${location.host}/wisp/`
-    libcurl.set_websocket(wsUrl)
-    await libcurl.load_wasm()
+    loadedLibcurl.set_websocket(wsUrl)
+    await loadedLibcurl.load_wasm()
     initialized = true
   })()
 
