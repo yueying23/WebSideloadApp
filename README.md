@@ -65,6 +65,9 @@ Projects referenced:
 - [webmuxd](https://github.com/hack-different/webmuxd)
 - [zsign](https://github.com/nicehash/zsign)
 - [openssl-wasm](https://github.com/nicehash/openssl-wasm)
+- [anisette-js](https://github.com/lbr77/anisette-js)
+- [unicorn](https://github.com/lbr77/unicorn/tree/tci-emscripten)
+
 Friends helped with feedback:
 - [@Lakr233](https://github.com/Lakr233)
 
