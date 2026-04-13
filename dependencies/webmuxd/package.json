@@ -28,7 +28,7 @@
     "build": "bun run build:openssl-wasm && tsc && bun run copy:openssl-wasm",
     "build:openssl-wasm": "cd ../../wasm/openssl && bun run build",
     "copy:openssl-wasm": "bun scripts/copy-openssl-wasm.mjs",
-    "prepare": "bun run build",
+    "prepack": "bun run build",
     "prepublishOnly": "bun run test && bun run lint",
     "preversion": "bun run lint",
     "version": "bun run format && git add -A src",
