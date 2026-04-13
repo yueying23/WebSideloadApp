@@ -1,0 +1,61 @@
+# VCS / editor
+.git
+.github
+.gitignore
+.gitmodules
+.prettierrc
+.idea
+.vscode
+.DS_Store
+
+# Markdown / docs
+*.md
+!README.md
+LICENSE
+
+# Node / TS caches
+**/node_modules
+frontend/dist
+**/build
+**/out
+**/.cache
+**/.turbo
+**/.vite
+**/*.tsbuildinfo
+**/*.log
+
+# Env
+.env
+.env.local
+.env.*.local
+
+# Backend sources not needed for frontend build, but package.json is needed
+# for workspace resolution during bun install.
+backend/src
+backend/worker-configuration.d.ts
+backend/wrangler.jsonc
+
+# WASM SOURCES — we only need the pre-built dist/binary outputs.
+# Source checkouts include large vendored OpenSSL copies, Rust target dirs, etc.
+# WASM native build artifacts (Rust/Emscripten) — only src/dist/binary/pkg needed
+wasm/openssl/vendor
+wasm/openssl/target
+wasm/openssl/precompiled
+wasm/libcurl-wasm/client/build
+wasm/libcurl-wasm/client/out
+wasm/libcurl-wasm/client/fragments
+wasm/libcurl-wasm/server
+wasm/zsign-wasm/native
+wasm/zsign-wasm/build
+wasm/zsign-wasm/test
+
+# Tests / scripts not needed at runtime
+dependencies/webmuxd/src/__tests__
+scripts
+
+# Docker meta
+Dockerfile
+.dockerignore
+
+# Frontend public anisette libs are shipped via Vite public/ handling —
+# keep them, but strip other platform natives if present.

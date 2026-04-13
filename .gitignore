@@ -1,3 +1,40 @@
+# Dependencies
 node_modules/
-lib/
+.pnp/
+.pnp.js
+
+# Build outputs
+dist/
+build/
+out/
+*.tsbuildinfo
+# webmuxd package compiled output
+dependencies/webmuxd/lib/
+
+# Caches
+.cache/
+.turbo/
+.vite/
+.parcel-cache/
+
+# Editor / IDE
 .idea/
+.vscode/
+!.vscode/extensions.json
+*.swp
+*.swo
+.DS_Store
+
+# Logs + env
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.env
+.env.local
+.env.*.local
+
+# Misc
+coverage/
+.wrangler/

@@ -1,30 +1,36 @@
 # AGENTS Guide
 
-## Communication
-- Reply to user in Chinese.
-- Keep source code, identifiers, and comments in English.
-
 ## Package Manager
+
 - Use `bun` for all Node.js dependency and script operations.
 
 ## Project Layout
+
 - Core npm package source: `dependencies/webmuxd/src/`
 - High-level iMobileDevice interactions: `dependencies/webmuxd/src/core/imobiledevice-client.ts`
-- Browser demo app: `frontend/`
-- Cloudflare Workers demo backend: `backend/`
-- OpenSSL Rust/WASM project: `wasm/openssl/`
+- Frontend React app: `frontend/src/`
+- Frontend entry: `frontend/src/main.tsx` → `App.tsx`
+- Frontend components: `frontend/src/components/`
+- Frontend business logic: `frontend/src/lib/` (storage, pair-record, account-session) + `frontend/src/flows/` (pair, login, sign, install)
+- Cloudflare Workers backend: `backend/`
+- WASM packages: `wasm/openssl/`, `wasm/libcurl-wasm/`, `wasm/zsign-wasm/`
 
 ## Key Rule: Avoid Logic Duplication
+
 - Do not re-implement usbmux/lockdown/AFC/InstProxy protocol logic in `frontend`.
-- `frontend/src/main.ts` must consume workspace package exports from `webmuxd`.
+- Frontend must consume workspace package exports from `webmuxd` via the vite alias.
 - If behavior changes are needed, modify `dependencies/webmuxd/` first, then wire it in frontend.
 
 ## Build & Validate
-- Root build: `bun run build`
+
+- WASM dist (always run before frontend): `bun run build:wasm:dist`
+- Dev server: `bun run dev`
+- Frontend build: `bun run build:frontend`
 - Root lint: `bun run lint`
 - Root test: `bun run test`
-- Frontend build: `cd frontend && bun run build`
+- Frontend tests: `bun run test:frontend`
 
 ## Change Style
+
 - Keep changes minimal, focused, and consistent with existing style.
 - Prefer removing dead code over keeping legacy paths.
