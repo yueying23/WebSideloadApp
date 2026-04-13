@@ -6,12 +6,15 @@ interface TwoFactorModalProps {
   open: boolean;
   onSubmit: (code: string) => void;
   onCancel: () => void;
+  /** Server-side error (e.g. wrong code). Shown when the login flow rejects after 2FA submit. */
+  serverError?: string | null;
 }
 
-export function TwoFactorModal({ open, onSubmit, onCancel }: TwoFactorModalProps) {
+export function TwoFactorModal({ open, onSubmit, onCancel, serverError }: TwoFactorModalProps) {
   const [code, setCode] = useState('');
   const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const displayError = serverError || error;
 
   useEffect(() => {
     if (open) {
@@ -67,13 +70,13 @@ export function TwoFactorModal({ open, onSubmit, onCancel }: TwoFactorModalProps
           }
         }}
       />
-      <p className="mt-2 min-h-[18px] text-[12px] text-[var(--color-danger)]">{error ?? ''}</p>
+      <p className="mt-2 min-h-[18px] text-[12px] text-[var(--color-danger)]">{displayError ?? ''}</p>
 
       <div className="mt-4 grid grid-cols-2 gap-2">
         <Button variant="ghost" onClick={onCancel}>
           Cancel
         </Button>
-        <Button variant="primary" onClick={handleSubmit}>
+        <Button variant="primary" onClick={handleSubmit} disabled={!!serverError}>
           Verify
         </Button>
       </div>

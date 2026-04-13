@@ -109,7 +109,8 @@ export function App() {
   const [twoFactor, setTwoFactor] = useState<{
     open: boolean;
     submit: ((code: string) => void) | null;
-  }>({ open: false, submit: null });
+    error: string | null;
+  }>({ open: false, submit: null, error: null });
 
   // Derived
   const isWebUsbSupported = useMemo(() => {
@@ -258,8 +259,8 @@ export function App() {
   }, [knownUdids, selectedTargetUdid]);
 
   // ---- pair flow ----
-  const handlePair = useCallback(async () => {
-    if (busyRef.current.pair) return;
+  const handlePair = useCallback(async (): Promise<PairedDeviceInfo | null> => {
+    if (busyRef.current.pair) return null;
     setBusy((prev) => ({ ...prev, pair: true }));
     setTrustOpen(true);
     addLog('pair: please continue on your device');
@@ -279,12 +280,14 @@ export function App() {
       saveText(SELECTED_DEVICE_UDID_STORAGE_KEY, info.udid);
       setPairRecordsVersion((v) => v + 1);
       setTrustOpen(false);
+      return info;
     } catch (error) {
       if (isPairingDialogPendingError(error)) {
-        return;
+        return null;
       }
       setTrustOpen(false);
       addLog(`pair failed: ${formatError(error)}`);
+      return null;
     } finally {
       setBusy((prev) => ({ ...prev, pair: false }));
     }
@@ -300,6 +303,8 @@ export function App() {
     }
 
     setBusy((prev) => ({ ...prev, loginSign: true }));
+    let twoFactorOpened = false;
+    let twoFactorErrorShown = false;
     try {
       saveText(APPLE_ID_STORAGE_KEY, trimmedAppleId);
       addLog('login: initializing anisette...');
@@ -315,11 +320,13 @@ export function App() {
         anisetteData: nextAnisette,
         log: addLog,
         onTwoFactorRequired: (submit) => {
-          setTwoFactor({ open: true, submit });
+          twoFactorOpened = true;
+          setTwoFactor({ open: true, submit, error: null });
           addLog('login: 2FA required, opening verification dialog');
         },
       });
 
+      setTwoFactor({ open: false, submit: null, error: null });
       addLog(`login: authenticated as ${context.appleId} / ${context.team.identifier}`);
       const key = accountKey(context.appleId, context.team.identifier);
       accountContextMapRef.current.set(key, context);
@@ -335,9 +342,16 @@ export function App() {
       addLog('login: done, navigating to sign page');
       navigateToPage('sign');
     } catch (error) {
-      addLog(`login failed: ${formatError(error)}`);
+      const msg = formatError(error);
+      addLog(`login failed: ${msg}`);
+      if (twoFactorOpened) {
+        setTwoFactor((prev) => ({ ...prev, error: msg }));
+        twoFactorErrorShown = true;
+      }
     } finally {
-      setTwoFactor({ open: false, submit: null });
+      if (!twoFactorErrorShown) {
+        setTwoFactor({ open: false, submit: null, error: null });
+      }
       setBusy((prev) => ({ ...prev, loginSign: false }));
     }
   }, [addLog, anisetteData, appleId, clearPrepared, navigateToPage, password]);
@@ -345,7 +359,6 @@ export function App() {
   const handleTwoFactorSubmit = useCallback(
     (code: string) => {
       const submit = twoFactor.submit;
-      setTwoFactor({ open: false, submit: null });
       if (submit) submit(code);
     },
     [twoFactor.submit],
@@ -353,7 +366,7 @@ export function App() {
 
   const handleTwoFactorCancel = useCallback(() => {
     const submit = twoFactor.submit;
-    setTwoFactor({ open: false, submit: null });
+    setTwoFactor({ open: false, submit: null, error: null });
     if (submit) {
       addLog('login: 2FA canceled');
       submit('__CANCELLED__');
@@ -422,10 +435,12 @@ export function App() {
         onStateChange: () => {},
         onTrustPending: () => setTrustOpen(true),
       });
+      let currentDeviceUdid = pairedDeviceInfo?.udid ?? null;
       if (!client.isSessionStarted) {
-        await handlePair();
+        const freshInfo = await handlePair();
+        currentDeviceUdid = freshInfo?.udid ?? null;
       }
-      if (pairedDeviceInfo?.udid !== targetUdid) {
+      if (currentDeviceUdid !== targetUdid) {
         throw new Error('connected device udid does not match selected target');
       }
 
@@ -606,7 +621,12 @@ export function App() {
       />
 
       <TrustModal open={trustOpen} onClose={() => setTrustOpen(false)} pairing={busy.pair} />
-      <TwoFactorModal open={twoFactor.open} onSubmit={handleTwoFactorSubmit} onCancel={handleTwoFactorCancel} />
+      <TwoFactorModal
+        open={twoFactor.open}
+        onSubmit={handleTwoFactorSubmit}
+        onCancel={handleTwoFactorCancel}
+        serverError={twoFactor.error}
+      />
     </main>
   );
 }

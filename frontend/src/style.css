@@ -16,12 +16,40 @@
   --color-danger: #dc2626;
   --color-danger-soft: #fef2f2;
 
+  --color-on-ink: #ffffff;
+  --color-ink-hover: #1f1f1f;
+  --color-accent-hover: #1d4ed8;
+
   --font-mono: 'SF Mono', 'JetBrains Mono', 'Fira Code', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Helvetica, Arial, system-ui, sans-serif;
 }
 
 :root {
   color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --color-bg: #0a0a0a;
+    --color-surface: #141414;
+    --color-elevated: #1a1a1a;
+    --color-border: rgba(255, 255, 255, 0.08);
+    --color-border-strong: rgba(255, 255, 255, 0.14);
+    --color-ink: #ededed;
+    --color-muted: #a1a1aa;
+    --color-subtle: #71717a;
+    --color-accent: #3b82f6;
+    --color-accent-soft: rgba(59, 130, 246, 0.12);
+    --color-success: #22c55e;
+    --color-success-soft: rgba(34, 197, 94, 0.12);
+    --color-danger: #ef4444;
+    --color-danger-soft: rgba(239, 68, 68, 0.12);
+    --color-on-ink: #0a0a0a;
+    --color-ink-hover: #d4d4d4;
+    --color-accent-hover: #60a5fa;
+    --color-log-bg: #111111;
+  }
 }
 
 * {
@@ -48,7 +76,7 @@ body.modal-open {
 }
 
 ::selection {
-  background-color: rgba(37, 99, 235, 0.18);
+  background-color: color-mix(in srgb, var(--color-accent) 22%, transparent);
 }
 
 /* ----- form primitives ----- */
@@ -78,7 +106,7 @@ body.modal-open {
 
 .field-input:focus {
   border-color: var(--color-accent);
-  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.18);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-accent) 18%, transparent);
 }
 
 .field-input:disabled {
@@ -129,11 +157,11 @@ body.modal-open {
 
 .btn-primary {
   background: var(--color-ink);
-  color: #ffffff;
+  color: var(--color-on-ink);
 }
 
 .btn-primary:hover:not(:disabled) {
-  background: #1f1f1f;
+  background: var(--color-ink-hover);
 }
 
 .btn-accent {
@@ -142,7 +170,7 @@ body.modal-open {
 }
 
 .btn-accent:hover:not(:disabled) {
-  background: #1d4ed8;
+  background: var(--color-accent-hover);
 }
 
 .btn-ghost {
@@ -192,9 +220,9 @@ body.modal-open {
 }
 
 .seg-btn[data-active='true'] {
-  background: var(--color-bg);
+  background: var(--color-elevated);
   color: var(--color-ink);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
 }
 
 /* ----- card ----- */
@@ -252,9 +280,9 @@ body.modal-open {
 
 .stepper-step[data-state='active'] .stepper-marker {
   background: var(--color-ink);
-  color: #ffffff;
+  color: var(--color-on-ink);
   border-color: var(--color-ink);
-  box-shadow: 0 0 0 4px rgba(10, 10, 10, 0.06);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--color-ink) 6%, transparent);
 }
 
 .stepper-step[data-state='active'] .stepper-marker::after {
@@ -262,7 +290,7 @@ body.modal-open {
   position: absolute;
   inset: -6px;
   border-radius: 999px;
-  border: 1px solid rgba(10, 10, 10, 0.18);
+  border: 1px solid color-mix(in srgb, var(--color-ink) 18%, transparent);
   animation: pulse-ring 1.8s cubic-bezier(0.4, 0, 0.6, 1) infinite;
   pointer-events: none;
 }
@@ -270,7 +298,7 @@ body.modal-open {
 .stepper-step[data-state='done'] .stepper-marker {
   background: var(--color-success-soft);
   color: var(--color-success);
-  border-color: rgba(22, 163, 74, 0.28);
+  border-color: color-mix(in srgb, var(--color-success) 28%, transparent);
 }
 
 .stepper-label {
@@ -386,7 +414,7 @@ pre.log {
   margin: 0;
   padding: 14px 16px;
   border-radius: 10px;
-  background: #0a0a0a;
+  background: var(--color-log-bg, #0a0a0a);
   color: #e5e7eb;
   font-family: var(--font-mono);
   font-size: 12px;
@@ -437,10 +465,10 @@ pre.log::-webkit-scrollbar-track {
   width: 100%;
   max-width: 420px;
   border-radius: 16px;
-  border: 1px solid var(--color-border);
-  background: var(--color-bg);
+  border: 1px solid var(--color-border-strong);
+  background: var(--color-elevated);
   padding: 22px;
-  box-shadow: 0 20px 50px -20px rgba(10, 10, 10, 0.25), 0 4px 12px -4px rgba(10, 10, 10, 0.12);
+  box-shadow: 0 20px 50px -20px rgba(0, 0, 0, 0.4), 0 4px 12px -4px rgba(0, 0, 0, 0.2);
   transform: translateY(8px) scale(0.98);
   opacity: 0;
   transition: transform 0.22s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.18s ease;
@@ -470,13 +498,13 @@ pre.log::-webkit-scrollbar-track {
 
 .chip[data-tone='success'] {
   background: var(--color-success-soft);
-  border-color: rgba(22, 163, 74, 0.22);
+  border-color: color-mix(in srgb, var(--color-success) 22%, transparent);
   color: var(--color-success);
 }
 
 .chip[data-tone='accent'] {
   background: var(--color-accent-soft);
-  border-color: rgba(37, 99, 235, 0.22);
+  border-color: color-mix(in srgb, var(--color-accent) 22%, transparent);
   color: var(--color-accent);
 }
 
@@ -542,4 +570,16 @@ pre.log::-webkit-scrollbar-track {
 
 .anim-in {
   animation: fade-in-up 0.32s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* ----- dark mode component overrides ----- */
+
+@media (prefers-color-scheme: dark) {
+  .field-select {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12' fill='none' stroke='%23a1a1aa' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 4.5L6 7.5L9 4.5'/%3E%3C/svg%3E");
+  }
+
+  .modal {
+    background: rgba(0, 0, 0, 0.55);
+  }
 }
