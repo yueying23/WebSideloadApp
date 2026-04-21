@@ -55,12 +55,23 @@ This branch is customized and optimized by **[@yueying23](https://github.com/yue
 - iOS device with USB cable
 - Apple Developer account (free or paid)
 
+### Clone Repository
+
+```bash
+# Clone repository with submodules
+git clone --recursive https://github.com/yueying23/sideimpactor.git
+cd sideimpactor
+
+# If you've already cloned without --recursive, initialize submodules:
+git submodule update --init --recursive
+```
+
+**Note**: This project uses Git Submodules for WASM dependencies (`zsign-wasm`, `libcurl-wasm`, `openssl-wasm`). Make sure to initialize them before building.
+
 ### Local Development
 
 ```bash
-# Clone and setup
-git clone https://github.com/yueying23/sideimpactor.git
-cd sideimpactor
+# Install dependencies
 bun install --ignore-scripts
 
 # Start development server

@@ -57,12 +57,23 @@
 - iOS 设备和 USB 数据线
 - Apple Developer 账户（免费或付费均可）
 
+### 克隆仓库
+
+```bash
+# 克隆仓库并初始化子模块
+git clone --recursive https://github.com/yueying23/sideimpactor.git
+cd sideimpactor
+
+# 如果已经克隆但忘记使用 --recursive，可以运行：
+git submodule update --init --recursive
+```
+
+**注意**：本项目使用 Git Submodule 管理 WASM 依赖（`zsign-wasm`、`libcurl-wasm`、`openssl-wasm`），请确保在构建前初始化子模块。
+
 ### 本地开发
 
 ```bash
-# 克隆并初始化
-git clone https://github.com/yueying23/sideimpactor.git
-cd sideimpactor
+# 安装依赖
 bun install --ignore-scripts
 
 # 启动开发服务器
