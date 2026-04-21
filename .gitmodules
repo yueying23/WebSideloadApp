@@ -1,9 +1,9 @@
 [submodule "wasm/zsign-wasm"]
 	path = wasm/zsign-wasm
-	url = https://github.com/lbr77/zsign-wasm
+	url = https://github.com/yueying23/zsign-wasm
 [submodule "wasm/libcurl-wasm"]
 	path = wasm/libcurl-wasm
-	url = https://github.com/lbr77/libcurl.js
+	url = https://github.com/yueying23/libcurl.js
 [submodule "wasm/openssl-wasm"]
 	path = wasm/openssl-wasm
-	url = https://github.com/jedisct1/openssl-wasm
+	url = https://github.com/yueying23/openssl-wasm
