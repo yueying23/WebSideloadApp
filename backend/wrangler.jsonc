@@ -1,6 +1,6 @@
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
-  "name": "webmuxd-wisp-demo",
+  "name": "web-sideload-app",
   "main": "src/index.ts",
   "compatibility_date": "2026-03-03",
   "assets": {
@@ -10,6 +10,6 @@
   },
   "observability": {
     "enabled": true,
-    "head_sampling_rate": 1
+    "head_sampling_rate": 0.1
   }
 }
