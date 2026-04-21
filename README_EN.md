@@ -335,16 +335,6 @@ See backend documentation for detailed solutions:
 - **Signing Speed**: ~5-15 seconds (depends on IPA size)
 - **Installation**: ~30-60 seconds (varies by app size and network)
 
-## 🤝 Contributing
-
-We welcome contributions! Please follow this workflow:
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
-
 ### Development Workflow
 
 ```bash
