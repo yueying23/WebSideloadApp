@@ -102,7 +102,18 @@ bun run deploy
 - ✅ 自动 HTTPS
 - ✅ 无需服务器管理
 
-**详细指南**：查看 backend 文档获取完整说明，包括：
+**💡 专业提示：使用自定义域名避免二次部署**
+
+默认情况下，Workers 会分配 `*.workers.dev` 域名，但这会导致：
+1. 需要先部署才能获得域名
+2. 然后配置前端使用该域名
+3. 再次部署更新前端
+
+**解决方案**：使用自定义域名（如 `sideload.yourdomain.com`），在部署前就确定下来！
+
+详细指南：查看 [`CUSTOM_DOMAIN_GUIDE.md`](deploy-package/CUSTOM_DOMAIN_GUIDE.md)
+
+**完整文档**：
 - [简体中文](backend/README.md)
 - [English](backend/README_EN.md)
 
@@ -117,6 +128,8 @@ bun run deploy
 
 **适用场景**：自托管、完全控制、隔离环境
 
+#### 方式 A：仅前端（轻量级）
+
 ```bash
 # 先构建 WASM 模块
 bun run build:wasm:dist
@@ -128,10 +141,40 @@ docker run -d -p 3000:3000 --name sideload web-sideload-app
 
 访问 [http://localhost:3000](http://localhost:3000)
 
+**特点**：
+- ✅ 轻量级（仅 Nginx）
+- ❌ **无 WISP 代理功能**，需配合外部后端
+- ❌ 无法进行设备配对和签名
+
+---
+
+#### 方式 B：完整栈（推荐，支持认证）✨
+
+使用 Docker Compose 部署前端 + WISP 代理，支持可选的认证功能。
+
+```bash
+# 1. 复制环境变量模板
+cp .env.example .env
+
+# 2. 编辑 .env，配置认证（推荐）
+# ACCESS_TOKEN_HASH=your_sha256_hash_here
+
+# 3. 启动完整栈
+docker compose --profile full up -d
+
+# 4. 查看日志
+docker compose logs -f full-stack
+```
+
+访问 [http://localhost:3000](http://localhost:3000)
+
 **优势**：
+- ✅ 完整功能（前端 + WISP 代理）
+- ✅ **支持认证保护**（生产环境必需）
+- ✅ 易于管理和更新
 - ✅ 完全数据自主权
-- ✅ 初次加载后可离线使用
-- ✅ 易于备份和迁移
+
+**详细文档**: 查看 [`DOCKER_DEPLOYMENT.md`](DOCKER_DEPLOYMENT.md)
 
 ---
 

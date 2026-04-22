@@ -1,0 +1,59 @@
+# Docker Compose for WebSideloadApp with optional authentication
+# 
+# Usage:
+#   # Frontend only (no WISP proxy, no auth)
+#   docker compose up -d frontend-only
+#
+#   # Full stack with authentication
+#   ACCESS_PASSWORD=mysecretpassword docker compose up -d
+#
+#   # Full stack without authentication (not recommended for production)
+#   docker compose up -d full-stack
+
+services:
+  # Option 1: Frontend only (static assets via Nginx)
+  # Use this when you have a separate WISP backend
+  frontend-only:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: websideload-frontend
+    ports:
+      - "3000:3000"
+    restart: unless-stopped
+    profiles:
+      - frontend
+    networks:
+      - websideload-network
+
+  # Option 2: Full stack (Frontend + Backend Worker)
+  # Includes WISP proxy with optional authentication
+  full-stack:
+    build:
+      context: .
+      dockerfile: Dockerfile.fullstack
+    container_name: websideload-fullstack
+    ports:
+      - "3000:3000"
+    environment:
+      # Authentication configuration (optional but recommended)
+      # Choose ONE of the following methods:
+      
+      # Method 1: Plain text password (easier, less secure)
+      - ACCESS_PASSWORD=${ACCESS_PASSWORD:-}
+      
+      # Method 2: SHA-256 hash (more secure, recommended for production)
+      # Generate with: echo -n "your_password" | sha256sum
+      - ACCESS_TOKEN_HASH=${ACCESS_TOKEN_HASH:-}
+      
+      # Optional: Custom token parameter name (default: "token")
+      - TOKEN_PARAM_NAME=${TOKEN_PARAM_NAME:-token}
+    restart: unless-stopped
+    profiles:
+      - full
+    networks:
+      - websideload-network
+
+networks:
+  websideload-network:
+    driver: bridge

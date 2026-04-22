@@ -1,0 +1,374 @@
+# 自定义域名部署指南
+
+## 🎯 为什么使用自定义域名？
+
+### 问题场景
+
+使用默认的 `*.workers.dev` 域名会导致"鸡生蛋"问题：
+
+```
+❌ 困境循环:
+1. 需要部署 Worker → 才能获得 workers.dev 域名
+2. 需要域名 → 才能配置前端 VITE_WISP_URL
+3. 需要重新构建前端 → 才能包含正确的 URL
+4. 需要再次部署 → 才能更新前端资源
+```
+
+**结果**: 需要部署 **2 次**！
+
+### 解决方案
+
+使用自定义域名，在部署前就确定下来：
+
+```
+✅ 线性流程:
+1. 准备自定义域名 (sideload.yourdomain.com)
+2. 配置前端使用该域名
+3. 构建前端
+4. 部署到 Workers（一次完成！）
+5. 在 Cloudflare 绑定域名
+```
+
+**优势**:
+- ✅ **只需部署一次**
+- ✅ 域名固定，可提前规划
+- ✅ 更专业的品牌形象
+- ✅ 支持 HTTPS 自动配置
+- ✅ 易于记忆和分享
+
+---
+
+## 📋 完整实施步骤
+
+### 步骤 1: 准备域名
+
+#### 选项 A: 已有域名（推荐）
+
+如果您已经有域名（如 `yourdomain.com`），可以直接使用子域名：
+
+```
+推荐格式:
+- sideload.yourdomain.com
+- app.yourdomain.com
+- ios.yourdomain.com
+```
+
+#### 选项 B: 注册新域名
+
+如果还没有域名，可以：
+- [Cloudflare Registrar](https://www.cloudflare.com/products/registrar/) - 成本价注册
+- [Namecheap](https://www.namecheap.com/) - 价格便宜
+- [阿里云](https://wanwang.aliyun.com/) - 国内备案方便
+
+---
+
+### 步骤 2: 配置 DNS 记录
+
+#### 方法 A: 通过 Cloudflare Dashboard（推荐）
+
+1. 登录 [Cloudflare Dashboard](https://dash.cloudflare.com)
+2. 选择您的域名
+3. 进入 **DNS** 页面
+4. 添加记录：
+
+```
+类型: CNAME
+名称: sideload (或 @ 表示根域名)
+内容: web-sideload-app.yueying23.workers.dev
+代理状态: ✓ 已代理 (橙色云图标)
+TTL: 自动
+```
+
+**注意**: 
+- "已代理"状态会自动启用 HTTPS 和 DDoS 保护
+- Workers 不需要预先部署即可配置 CNAME
+
+#### 方法 B: 通过 wrangler CLI
+
+```bash
+# 安装 wrangler
+npm install -g wrangler
+
+# 登录
+wrangler login
+
+# 添加自定义域名
+wrangler domains add sideload.yourdomain.com
+```
+
+---
+
+### 步骤 3: 配置前端环境变量
+
+编辑 `frontend/.env.production`:
+
+```env
+# 使用您的自定义域名
+VITE_WISP_URL=wss://sideload.yourdomain.com/wisp/?token=mysecretpassword
+
+# 其他配置...
+VITE_APP_NAME=WebSideloadApp
+```
+
+**重要**: 
+- 使用 `wss://` 而非 `ws://`（Cloudflare 自动提供 HTTPS）
+- Token 必须与后端配置的 `ACCESS_PASSWORD` 或 `ACCESS_TOKEN_HASH` 匹配
+
+---
+
+### 步骤 4: 构建前端
+
+```bash
+cd frontend
+bun run build
+```
+
+**验证构建结果**:
+
+```bash
+# 检查生成的文件中是否包含正确的 URL
+grep -r "sideload.yourdomain.com" dist/assets/*.js
+
+# 应该看到类似输出:
+# dist/assets/index-abc123.js:...fetch("wss://sideload.yourdomain.com/wisp/?token=...")...
+```
+
+---
+
+### 步骤 5: 部署到 Workers
+
+```bash
+cd backend
+
+# 安装依赖
+bun install
+
+# 配置认证
+wrangler secret put ACCESS_PASSWORD
+# 输入: mysecretpassword
+
+# 部署（包含前端资源）
+npx wrangler deploy
+```
+
+**此时访问**:
+- ❌ `https://web-sideload-app.yueying23.workers.dev` - 可以访问，但不是最终域名
+- ⏳ `https://sideload.yourdomain.com` - DNS 尚未生效
+
+---
+
+### 步骤 6: 在 Cloudflare 绑定自定义域名
+
+#### 方法 A: 通过 Dashboard（推荐）
+
+1. 登录 [Cloudflare Dashboard](https://dash.cloudflare.com)
+2. 进入 **Workers & Pages**
+3. 选择您的 Worker (`web-sideload-app`)
+4. 点击 **Triggers** 标签
+5. 找到 **Custom Domains** 部分
+6. 点击 **Add Custom Domain**
+7. 输入: `sideload.yourdomain.com`
+8. 点击 **Add Domain**
+
+Cloudflare 会：
+- ✅ 自动验证 DNS 配置
+- ✅ 自动配置 SSL 证书
+- ✅ 自动路由流量到您的 Worker
+
+#### 方法 B: 通过 wrangler CLI
+
+```bash
+# 在 backend 目录中
+wrangler domains add sideload.yourdomain.com
+```
+
+---
+
+### 步骤 7: 验证部署
+
+```bash
+# 1. 测试前端页面
+curl https://sideload.yourdomain.com/
+
+# 2. 测试 WISP 端点（应该返回 WebSocket 升级响应）
+curl -i -H "Upgrade: websocket" -H "Connection: Upgrade" \
+  "https://sideload.yourdomain.com/wisp/?token=mysecretpassword"
+
+# 3. 在浏览器中访问
+open https://sideload.yourdomain.com
+```
+
+**预期结果**:
+- ✅ 前端页面正常加载
+- ✅ 可以连接设备进行配对
+- ✅ 可以签名 IPA 文件
+- ✅ HTTPS 锁图标显示正常
+
+---
+
+## 🔧 高级配置
+
+### 多环境域名策略
+
+```bash
+# 开发环境
+VITE_WISP_URL=ws://localhost:8787/wisp/?token=dev
+
+# 测试环境
+VITE_WISP_URL=wss://test-sideload.yourdomain.com/wisp/?token=test_pass
+
+# 生产环境
+VITE_WISP_URL=wss://sideload.yourdomain.com/wisp/?token=prod_pass
+```
+
+### 自动化部署脚本
+
+创建 `scripts/deploy-with-custom-domain.sh`:
+
+```bash
+#!/bin/bash
+set -e
+
+DOMAIN=${1:-"sideload.yourdomain.com"}
+TOKEN=${2:-"mysecretpassword"}
+
+echo "Deploying with custom domain: $DOMAIN"
+
+# 1. 配置前端
+cat > frontend/.env.production << EOF
+VITE_WISP_URL=wss://${DOMAIN}/wisp/?token=${TOKEN}
+EOF
+
+# 2. 构建前端
+cd frontend
+bun run build
+cd ..
+
+# 3. 部署后端
+cd backend
+wrangler secret put ACCESS_PASSWORD <<< "$TOKEN"
+npx wrangler deploy
+
+echo "✅ Deployment complete!"
+echo "Access: https://${DOMAIN}"
+```
+
+使用：
+```bash
+chmod +x scripts/deploy-with-custom-domain.sh
+./scripts/deploy-with-custom-domain.sh sideload.yourdomain.com mysecretpassword
+```
+
+---
+
+## 📊 对比总结
+
+| 方案 | 部署次数 | 域名确定性 | 专业性 | 复杂度 |
+|------|---------|-----------|--------|--------|
+| **自定义域名** | 1 次 ✅ | 部署前确定 ✅ | 高 ✅ | 中 |
+| workers.dev | 2 次 ❌ | 部署后才知道 ❌ | 低 ❌ | 低 |
+
+---
+
+## ❓ 常见问题
+
+### Q1: DNS 传播需要多长时间？
+
+**A**: 
+- Cloudflare 代理的 CNAME 通常 **几分钟内** 生效
+- 全球完全传播可能需要 **24-48 小时**
+- 可以使用 `dig sideload.yourdomain.com` 检查
+
+### Q2: 可以在部署后再添加自定义域名吗？
+
+**A**: 可以！但需要：
+1. 在 Cloudflare 绑定域名
+2. 更新前端 `.env.production`
+3. 重新构建前端
+4. 重新部署
+
+所以**建议一开始就使用自定义域名**。
+
+### Q3: 自定义域名需要额外费用吗？
+
+**A**: 
+- Cloudflare Workers: 免费套餐包含自定义域名
+- 域名注册: 约 $10-15/年（.com）
+- Cloudflare DNS: 免费
+
+### Q4: 如何切换域名？
+
+**A**:
+```bash
+# 1. 更新 DNS 记录指向新的 Worker
+# 2. 更新 frontend/.env.production
+# 3. 重新构建并部署
+# 4. 在 Cloudflare 解绑旧域名，绑定新域名
+```
+
+### Q5: 可以使用根域名（不带 www）吗？
+
+**A**: 可以！使用 CNAME Flattening：
+```
+类型: CNAME
+名称: @
+内容: web-sideload-app.yueying23.workers.dev
+代理状态: 已代理
+```
+
+Cloudflare 会自动处理根域名的 CNAME。
+
+---
+
+## 🎯 最佳实践
+
+### 1. 域名命名建议
+
+```
+✅ 好:
+- sideload.yourdomain.com
+- ios.yourdomain.com
+- app.yourdomain.com
+
+❌ 避免:
+- very-long-subdomain-name.yourdomain.com
+- test123.yourdomain.com (不够专业)
+```
+
+### 2. Token 管理
+
+```bash
+# 生成强密码
+openssl rand -base64 32
+
+# 使用哈希（更安全）
+echo -n "your_password" | sha256sum
+wrangler secret put ACCESS_TOKEN_HASH
+```
+
+### 3. 备份配置
+
+```bash
+# 保存环境变量
+cp frontend/.env.production .env.production.backup
+
+# 记录域名和 Token
+cat > deployment-info.txt << EOF
+Domain: sideload.yourdomain.com
+Token: $(date +%Y%m%d)_backup
+Deployed: $(date)
+EOF
+```
+
+---
+
+## 📚 相关文档
+
+- [Cloudflare Workers 自定义域名](https://developers.cloudflare.com/workers/configuration/routing/custom-domains/)
+- [Cloudflare DNS 文档](https://developers.cloudflare.com/dns/)
+- [Wrangler CLI 文档](https://developers.cloudflare.com/workers/wrangler/)
+
+---
+
+**最后更新**: 2026-04-23  
+**维护者**: @yueying23

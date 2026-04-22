@@ -191,6 +191,7 @@ jobs:
           cp .github/templates/DEPLOYMENT_OPTIONS.md.template deploy-package/DEPLOYMENT_OPTIONS.md 2>/dev/null || echo "DEPLOYMENT_OPTIONS.md.template not found"
           cp .github/templates/README_DEPLOYMENT.md.template deploy-package/README_DEPLOYMENT.md 2>/dev/null || echo "README_DEPLOYMENT.md.template not found"
           cp .github/templates/STRUCTURE_OPTIMIZATION.md.template deploy-package/STRUCTURE_OPTIMIZATION.md 2>/dev/null || echo "STRUCTURE_OPTIMIZATION.md.template not found"
+          cp .github/templates/CUSTOM_DOMAIN_GUIDE.md.template deploy-package/CUSTOM_DOMAIN_GUIDE.md 2>/dev/null || echo "CUSTOM_DOMAIN_GUIDE.md.template not found"
           
           echo "Base deployment package prepared"
           echo "Directory structure:"

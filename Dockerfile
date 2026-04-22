@@ -1,4 +1,6 @@
 # Multi-stage Docker build for the Side Impactor frontend.
+# Note: This Dockerfile only builds the frontend static assets.
+# For full functionality with WISP proxy and authentication, use docker-compose.yml.
 
 # --- Stage 1: build ---
 FROM oven/bun:1.3-alpine AS build

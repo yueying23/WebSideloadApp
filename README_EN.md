@@ -105,6 +105,17 @@ bun run deploy
 - This may lead to **unauthorized access and high costs**
 - **Strongly recommended** to configure token authentication immediately after deployment (see [backend/README_EN.md](backend/README_EN.md#-enable-token-authentication-highly-recommended))
 
+**💡 Pro Tip: Use Custom Domain to Avoid Double Deployment**
+
+By default, Workers get a `*.workers.dev` domain, which causes:
+1. Need to deploy first to get the domain
+2. Then configure frontend with that domain
+3. Deploy again to update frontend
+
+**Solution**: Use a custom domain (e.g., `sideload.yourdomain.com`) that you determine before deployment!
+
+Detailed guide: See [`CUSTOM_DOMAIN_GUIDE.md`](deploy-package/CUSTOM_DOMAIN_GUIDE.md)
+
 **Setup Guide**: See backend documentation for detailed instructions:
 - [English](backend/README_EN.md)
 - [简体中文](backend/README.md)
@@ -120,6 +131,8 @@ Including:
 
 **Best for**: Self-hosted, full control, air-gapped environments
 
+#### Option A: Frontend Only (Lightweight)
+
 ```bash
 # Build WASM modules first
 bun run build:wasm:dist
@@ -131,10 +144,40 @@ docker run -d -p 3000:3000 --name sideload web-sideload-app
 
 Access at [http://localhost:3000](http://localhost:3000)
 
+**Features**:
+- ✅ Lightweight (Nginx only)
+- ❌ **No WISP proxy**, requires external backend
+- ❌ Cannot perform device pairing and signing
+
+---
+
+#### Option B: Full Stack (Recommended, with Auth Support) ✨
+
+Deploy frontend + WISP proxy using Docker Compose, with optional authentication.
+
+```bash
+# 1. Copy environment template
+cp .env.example .env
+
+# 2. Edit .env to configure authentication (recommended)
+# ACCESS_TOKEN_HASH=your_sha256_hash_here
+
+# 3. Start full stack
+docker compose --profile full up -d
+
+# 4. View logs
+docker compose logs -f full-stack
+```
+
+Access at [http://localhost:3000](http://localhost:3000)
+
 **Benefits**:
+- ✅ Complete functionality (frontend + WISP proxy)
+- ✅ **Authentication support** (required for production)
+- ✅ Easy management and updates
 - ✅ Complete data sovereignty
-- ✅ Works offline after initial load
-- ✅ Easy backup and migration
+
+**Detailed Documentation**: See [`DOCKER_DEPLOYMENT.md`](DOCKER_DEPLOYMENT.md)
 
 ---
 

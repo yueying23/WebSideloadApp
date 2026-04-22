@@ -1,0 +1,92 @@
+# Multi-stage Docker build for WebSideloadApp with WISP proxy and authentication
+# This builds both frontend and backend into a single container using Cloudflare Workers runtime
+
+# --- Stage 1: Build frontend and WASM modules ---
+FROM oven/bun:1.3-alpine AS build
+WORKDIR /app
+
+# Copy manifests first for dependency layer caching.
+COPY package.json bun.lock ./
+COPY frontend/package.json frontend/
+COPY backend/package.json backend/
+COPY dependencies/webmuxd/package.json dependencies/webmuxd/
+COPY wasm/openssl/package.json wasm/openssl/
+COPY wasm/libcurl-wasm/package.json wasm/libcurl-wasm/
+COPY wasm/zsign-wasm/package.json wasm/zsign-wasm/
+COPY wasm/zsign-wasm/js/package.json wasm/zsign-wasm/js/
+
+RUN bun install --frozen-lockfile --ignore-scripts
+
+# Copy all sources (filtered by .dockerignore).
+COPY . .
+
+# Build WASM dist bundles (src→dist copies) then frontend.
+RUN bun run build:wasm:dist && cd frontend && bun run build
+
+# --- Stage 2: Prepare backend with embedded assets ---
+FROM oven/bun:1.3-alpine AS backend-builder
+WORKDIR /app
+
+# Copy backend source
+COPY backend/package.json backend/tsconfig.json ./
+COPY backend/src ./src
+
+# Copy built frontend assets
+COPY --from=build /app/frontend/dist ./frontend-dist
+
+# Install backend dependencies
+RUN bun install --production --frozen-lockfile
+
+# Create a wrapper that serves static files and proxies WISP
+RUN cat > server.js << 'EOF'
+import { serve } from "bun";
+import { fetch as workerFetch } from "./src/index.ts";
+
+const PORT = process.env.PORT || 3000;
+
+serve({
+  port: PORT,
+  async fetch(request) {
+    // Create mock env object with ASSETS binding
+    const env = {
+      ASSETS: {
+        fetch: async (req) => {
+          const url = new URL(req.url);
+          const filePath = url.pathname === '/' ? '/index.html' : url.pathname;
+          const fullPath = `./frontend-dist${filePath}`;
+          
+          try {
+            const file = Bun.file(fullPath);
+            if (await file.exists()) {
+              return new Response(file);
+            }
+            // Fallback to index.html for SPA routing
+            const indexFile = Bun.file('./frontend-dist/index.html');
+            return new Response(indexFile, { headers: { 'Content-Type': 'text/html' } });
+          } catch (error) {
+            return new Response('Not Found', { status: 404 });
+          }
+        }
+      },
+      ACCESS_PASSWORD: process.env.ACCESS_PASSWORD || '',
+      ACCESS_TOKEN_HASH: process.env.ACCESS_TOKEN_HASH || '',
+      TOKEN_PARAM_NAME: process.env.TOKEN_PARAM_NAME || 'token'
+    };
+
+    return await workerFetch(request, env, {});
+  },
+});
+
+console.log(`Server running on http://localhost:${PORT}`);
+EOF
+
+# --- Stage 3: Runtime ---
+FROM oven/bun:1.3-alpine-slim
+WORKDIR /app
+
+# Copy backend with embedded assets
+COPY --from=backend-builder /app ./
+
+EXPOSE 3000
+
+CMD ["bun", "run", "server.js"]

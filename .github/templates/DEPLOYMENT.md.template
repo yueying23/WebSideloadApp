@@ -9,6 +9,64 @@
 
 {{AUTH_NOTE}}
 
+## 🌐 域名配置策略
+
+### 推荐方案：使用自定义域名（避免二次部署）✨
+
+**问题**: Workers 的 `*.workers.dev` 域名只有在首次部署后才能获得，导致：
+1. 第一次部署时不知道最终域名
+2. 前端无法配置正确的 WISP URL
+3. 需要第二次部署来更新前端
+
+**解决方案**: 使用自己的域名，在部署前就确定下来！
+
+#### 步骤 1: 准备自定义域名
+
+```bash
+# 假设您拥有域名 yourdomain.com
+# 在 Cloudflare DNS 中添加 CNAME 记录：
+# 名称: sideload (或 @)
+# 类型: CNAME
+# 内容: web-sideload-app.yueying23.workers.dev
+# 代理状态: 已代理 (橙色云)
+```
+
+#### 步骤 2: 配置前端环境变量
+
+```env
+# frontend/.env.production
+VITE_WISP_URL=wss://sideload.yourdomain.com/wisp/?token=mysecretpassword
+```
+
+#### 步骤 3: 构建并部署
+
+```bash
+# 构建前端
+cd frontend
+bun run build
+
+# 部署后端（包含前端资源）
+cd ../backend
+wrangler secret put ACCESS_PASSWORD
+npx wrangler deploy
+```
+
+#### 步骤 4: 在 Cloudflare Dashboard 绑定域名
+
+1. 登录 [Cloudflare Dashboard](https://dash.cloudflare.com)
+2. 进入 Workers & Pages → 选择您的 Worker
+3. 点击 "Triggers" → "Custom Domains"
+4. 添加域名: `sideload.yourdomain.com`
+5. Cloudflare 自动配置 DNS 和 SSL
+
+**优势**:
+- ✅ **只需部署一次**
+- ✅ 域名固定，可提前配置
+- ✅ 更专业的品牌形象
+- ✅ 支持 HTTPS 自动配置
+
+---
+
 ## 快速部署选项
 
 ### 选项 1: 合并部署到单个 Worker（推荐）✨
@@ -41,11 +99,18 @@ npx wrangler deploy
 - 前端页面: `https://xxx.workers.dev/`
 - WISP 代理: `wss://xxx.workers.dev/wisp/?token=xxx`
 
+**重要提示**:
+- 如果启用了认证，确保前端构建时已嵌入正确的 Token
+- 修改 `frontend/.env.production` 中的 VITE_WISP_URL 后需重新构建并部署
+
 ---
 
 ### 选项 2: 分离部署（Cloudflare Pages + Workers）
 
-**适用场景**: 需要独立的 CDN 缓存策略或前后端独立开发
+**适用场景**: 
+- 需要独立的 CDN 缓存策略
+- 前端和后端需要不同的部署频率
+- 团队协作时前后端独立开发
 
 #### 2.1 前端部署到 Cloudflare Pages
 
@@ -61,20 +126,52 @@ npx wrangler pages deploy . --project-name=web-sideload-app
 # 3. 上传 frontend/dist 目录
 ```
 
+**记录 Pages 分配的域名**，例如: `https://web-sideload-app.pages.dev`
+
 #### 2.2 后端部署到 Cloudflare Workers
 
 ```bash
 cd ../backend
+
+# 安装依赖
 bun install
+
+# 配置认证（生产环境必需）
 wrangler secret put ACCESS_TOKEN_HASH
+# 或
+wrangler secret put ACCESS_PASSWORD
+
+# 部署 Worker
 npx wrangler deploy
 ```
 
-**注意**: 分离部署时，前端需要在构建时嵌入后端 URL
+**记录 Worker 分配的域名**，例如: `https://web-sideload-app.workers.dev`
+
+#### 2.3 配置前端连接后端
+
+**重要**: 分离部署时，前端需要知道后端的 URL。
+
+**方法 A: 构建时嵌入（推荐）**
+
+修改 `frontend/.env.production`:
+```env
+VITE_WISP_URL=wss://web-sideload-app.workers.dev/wisp/?token=your_password
+```
+
+然后重新构建前端:
+```bash
+cd frontend
+bun run build
+# 将新的 dist 内容重新部署到 Pages
+```
+
+**方法 B: 运行时动态配置**
+
+在前端代码中硬编码或使用配置文件指定 WISP URL。
 
 ---
 
-### 选项 3: Docker 部署
+### 选项 3: Docker 部署（自托管）
 
 ```bash
 # 在 deploy-package 目录中
@@ -82,7 +179,7 @@ docker build -t web-sideload-app .
 docker run -d -p 3000:3000 --name sideload web-sideload-app
 ```
 
-**注意**: Docker 部署仅包含前端静态资源，不包含 WISP 代理功能。
+**注意**: Docker 部署仅包含前端静态资源，不包含 WISP 代理功能。如需完整功能，请配合独立的 WISP 后端使用。
 
 ---
 

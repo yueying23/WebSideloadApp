@@ -26,7 +26,7 @@ frontend/dist
 **/*.tsbuildinfo
 **/*.log
 
-# Env
+# Env files (NEVER include in Docker image)
 .env
 .env.local
 .env.*.local
