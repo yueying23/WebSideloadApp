@@ -169,15 +169,16 @@ jobs:
           # 创建部署包根目录
           mkdir -p deploy-package
           
-          # 复制前端构建产物
-          cp -r frontend/dist deploy-package/frontend-dist
+          # 复制前端构建产物到 frontend/dist（保持与源码一致的结构）
+          mkdir -p deploy-package/frontend
+          cp -r frontend/dist deploy-package/frontend/dist
           
-          # 复制后端源代码和配置
+          # 复制后端源代码和配置（包括 wrangler.jsonc）
           mkdir -p deploy-package/backend
           cp -r backend/src deploy-package/backend/
           cp backend/package.json deploy-package/backend/
           cp backend/tsconfig.json deploy-package/backend/
-          cp backend/wrangler.jsonc deploy-package/backend/ 2>/dev/null || cp backend/wrangler.toml deploy-package/backend/ 2>/dev/null || echo "No wrangler config found"
+          cp backend/wrangler.jsonc deploy-package/backend/
           cp backend/README.md deploy-package/backend/ 2>/dev/null || true
           cp backend/README_EN.md deploy-package/backend/ 2>/dev/null || true
           
@@ -186,107 +187,11 @@ jobs:
           cp nginx.conf deploy-package/
           cp .dockerignore deploy-package/ 2>/dev/null || true
           
+          # 复制部署说明文档（从模板目录）
+          cp .github/templates/DEPLOYMENT_OPTIONS.md.template deploy-package/DEPLOYMENT_OPTIONS.md 2>/dev/null || echo "DEPLOYMENT_OPTIONS.md.template not found"
+          cp .github/templates/README_DEPLOYMENT.md.template deploy-package/README_DEPLOYMENT.md 2>/dev/null || echo "README_DEPLOYMENT.md.template not found"
+          cp .github/templates/STRUCTURE_OPTIMIZATION.md.template deploy-package/STRUCTURE_OPTIMIZATION.md 2>/dev/null || echo "STRUCTURE_OPTIMIZATION.md.template not found"
+          
           echo "Base deployment package prepared"
-
-      # 9.1. 生成部署文档
-      - name: Generate deployment documentation
-        run: bash .github/scripts/generate-deployment-docs.sh
-        env:
-          VERSION: ${{ github.event.inputs.version }}
-          ENABLE_AUTH: ${{ github.event.inputs.enable_auth }}
-          WISP_URL: ${{ github.event.inputs.wisp_url }}
-          COMMIT_SHA: ${{ github.sha }}
-          OUTPUT_DIR: deploy-package
-
-      # 9.5. 生成 Release Body 文件
-      - name: Generate Release Body
-        run: bash .github/scripts/generate-release-body.sh > release_body.md
-        env:
-          RELEASE_NOTES: ${{ github.event.inputs.release_notes }}
-          ENABLE_AUTH: ${{ github.event.inputs.enable_auth }}
-          WISP_URL: ${{ github.event.inputs.wisp_url }}
-          GITHUB_REPOSITORY: ${{ github.repository }}
-          GITHUB_SHA: ${{ github.sha }}
-
-      # 10. 压缩部署包
-      - name: Archive deployment package
-        run: |
-          echo "Creating archive..."
-          VERSION="${{ github.event.inputs.version }}"
-          ARCHIVE_NAME="web-sideload-app-${VERSION#v}"
-          
-          # 创建 tar.gz 压缩包
-          tar -czf "${ARCHIVE_NAME}.tar.gz" deploy-package/
-          
-          # 同时创建 zip 格式（Windows 用户友好）
-          apt-get update && apt-get install -y zip
-          zip -r "${ARCHIVE_NAME}.zip" deploy-package/
-          
-          echo "Archives created:"
-          ls -lh *.tar.gz *.zip
-
-      # 11. 生成校验和
-      - name: Generate checksums
-        run: |
-          echo "Generating checksums..."
-          sha256sum *.tar.gz *.zip > SHA256SUMS.txt
-          md5sum *.tar.gz *.zip > MD5SUMS.txt
-          echo "Checksums generated:"
-          cat SHA256SUMS.txt
-
-      # 12. 创建 GitHub Release 并上传资产
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v1
-        with:
-          tag_name: ${{ github.event.inputs.version }}
-          name: Release ${{ github.event.inputs.version }}
-          body_path: release_body.md
-          files: |
-            *.tar.gz
-            *.zip
-            SHA256SUMS.txt
-            MD5SUMS.txt
-          draft: false
-          prerelease: ${{ github.event.inputs.prerelease }}
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      # 13. 输出部署信息
-      - name: Deployment summary
-        run: |
-          echo "## ✅ 构建完成！" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**版本:** ${{ github.event.inputs.version }}" >> $GITHUB_STEP_SUMMARY
-          echo "**提交:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
-          echo "**认证状态:** ${{ github.event.inputs.enable_auth == 'true' && '✅ 已启用' || '⚠️ 未启用' }}" >> $GITHUB_STEP_SUMMARY
-          
-          if [ "${{ github.event.inputs.enable_auth }}" == "true" ]; then
-            echo "**WISP URL:** \`${{ github.event.inputs.wisp_url }}\`" >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "### 🔐 认证配置" >> $GITHUB_STEP_SUMMARY
-            echo "- 前端已嵌入 WISP URL 和 Token" >> $GITHUB_STEP_SUMMARY
-            echo "- 确保 Cloudflare Workers 配置了相同的 token" >> $GITHUB_STEP_SUMMARY
-            echo "- 使用 \`wrangler secret put ACCESS_PASSWORD\` 设置后端认证" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "### ⚠️ 安全警告" >> $GITHUB_STEP_SUMMARY
-            echo "- **此版本未配置认证保护**" >> $GITHUB_STEP_SUMMARY
-            echo "- 生产环境强烈建议配置 ACCESS_PASSWORD 或 ACCESS_TOKEN_HASH" >> $GITHUB_STEP_SUMMARY
-            echo "- 查看 DEPLOYMENT.md 了解配置步骤" >> $GITHUB_STEP_SUMMARY
-          fi
-          
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### 📦 已生成的部署包：" >> $GITHUB_STEP_SUMMARY
-          echo "- \`web-sideload-app-${{ github.event.inputs.version }}.tar.gz\`" >> $GITHUB_STEP_SUMMARY
-          echo "- \`web-sideload-app-${{ github.event.inputs.version }}.zip\`" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### 🚀 下一步操作：" >> $GITHUB_STEP_SUMMARY
-          echo "1. 前往 [Releases 页面](https://github.com/${{ github.repository }}/releases/tag/${{ github.event.inputs.version }}) 下载部署包" >> $GITHUB_STEP_SUMMARY
-          echo "2. 查看 \`DEPLOYMENT.md\` 了解详细部署步骤" >> $GITHUB_STEP_SUMMARY
-          if [ "${{ github.event.inputs.enable_auth }}" != "true" ]; then
-            echo "3. **配置认证**以防止未授权访问" >> $GITHUB_STEP_SUMMARY
-            echo "4. 重新构建并部署前端" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "3. 部署到 Cloudflare Pages/Workers" >> $GITHUB_STEP_SUMMARY
-            echo "4. 验证认证是否正常工作" >> $GITHUB_STEP_SUMMARY
-          fi
+          echo "Directory structure:"
+          find deploy-package -type f -name "*.json*" -o -name "*.md" | head -20

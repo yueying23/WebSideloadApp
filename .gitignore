@@ -11,6 +11,9 @@ out/
 # webmuxd package compiled output
 dependencies/webmuxd/lib/
 
+# actions build outputs
+deploy-package/
+
 # Caches
 .cache/
 .turbo/

@@ -1,0 +1,114 @@
+# 部署方式支持说明
+
+## 📦 部署包结构
+
+```
+deploy-package/
+├── backend/
+│   ├── src/                    # Worker 源代码
+│   ├── package.json
+│   ├── tsconfig.json
+│   └── wrangler.jsonc          # ⭐ 直接使用源码配置（指向 ../frontend/dist）
+├── frontend/                   # ⭐ 与源码结构一致
+│   └── dist/                   # 前端构建产物
+│       ├── index.html
+│       ├── assets/
+│       └── ...
+├── DEPLOYMENT.md               # 快速部署指南
+├── DEPLOYMENT_OPTIONS.md       # ⭐ 详细部署方式对比
+├── Dockerfile
+└── nginx.conf
+```
+
+## ✅ 支持的部署方式
+
+### 1. 合并部署（推荐）✨
+
+**特点**: 
+- 前后端部署到同一个 Cloudflare Worker
+- 使用 `backend/wrangler.jsonc` 配置（与源码完全一致）
+- `assets.directory` 指向 `../frontend/dist`
+
+**优势**:
+- ✅ 只需一个 Worker，费用更低
+- ✅ 前后端同域名，无 CORS 问题
+- ✅ 配置简单，一键部署
+- ✅ 无需修改任何配置文件
+
+**命令**:
+```bash
+cd deploy-package/backend
+bun install
+wrangler secret put ACCESS_TOKEN_HASH
+npx wrangler deploy
+```
+
+---
+
+### 2. 分离部署
+
+**特点**:
+- 前端部署到 Cloudflare Pages (`frontend/dist`)
+- 后端部署到 Cloudflare Workers
+- 需要分别管理两个服务
+
+**命令**:
+```bash
+# 部署前端
+cd deploy-package/frontend/dist
+npx wrangler pages deploy . --project-name=web-sideload-app
+
+# 部署后端
+cd ../../backend
+bun install
+wrangler secret put ACCESS_TOKEN_HASH
+npx wrangler deploy
+```
+
+---
+
+## 🔧 技术实现
+
+### 为什么保持与源码一致的目录结构？
+
+#### 优势对比
+
+| 方面 | 调整结构适配配置 | 调整配置适配结构 |
+|------|----------------|----------------|
+| **配置文件** | ✅ 直接复制源码 | ❌ 需生成专用配置 |
+| **维护成本** | ✅ 低（一份配置） | ❌ 高（两份配置） |
+| **学习曲线** | ✅ 低（熟悉结构） | ❌ 高（新结构） |
+| **出错概率** | ✅ 低 | ❌ 高 |
+
+#### 设计原则
+
+1. **单一数据源**: wrangler.jsonc 只有一份，位于 `backend/`
+2. **结构一致性**: 部署包结构与源码结构完全一致
+3. **零配置迁移**: 用户可以直接使用部署包，无需修改任何配置
+
+---
+
+## 💡 选择建议
+
+### 选择合并部署，如果：
+- ✅ 个人项目或小团队
+- ✅ 希望简化配置和维护
+- ✅ 预算有限
+
+### 选择分离部署，如果：
+- ✅ 大型项目或企业级应用
+- ✅ 前后端团队独立工作
+- ✅ 需要精细的缓存控制
+
+---
+
+## 📚 相关文档
+
+- [`DEPLOYMENT.md`](DEPLOYMENT.md) - 快速部署指南
+- [`DEPLOYMENT_OPTIONS.md`](DEPLOYMENT_OPTIONS.md) - 详细对比和选择指南
+- [Cloudflare Workers Assets Binding](https://developers.cloudflare.com/workers/static-assets/binding/)
+
+---
+
+**更新日期**: 2026-04-23  
+**维护者**: @yueying23

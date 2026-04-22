@@ -1,0 +1,117 @@
+# 部署包结构优化说明
+
+## 🎯 优化目标
+
+**核心原则**: 调整 Actions 的文件结构来适配现有的 backend 配置，而非相反。
+
+---
+
+## 📊 方案对比
+
+### ❌ 之前的方案（不推荐）
+
+```
+deploy-package/
+├── backend/
+│   └── wrangler.jsonc          # 需要重新生成，指向 ../frontend-dist
+├── frontend-dist/              # 不同的目录名
+└── ...
+```
+
+**问题**:
+- ❌ 需要维护两份 wrangler.jsonc 配置
+- ❌ 部署包结构与源码不一致，增加学习成本
+- ❌ 配置文件修改需要同步到两处
+
+### ✅ 改进后的方案（推荐）
+
+```
+deploy-package/
+├── backend/
+│   └── wrangler.jsonc          # 直接复制源码配置，指向 ../frontend/dist
+├── frontend/                   # 与源码一致的目录结构
+│   └── dist/
+└── ...
+```
+
+**优势**:
+- ✅ 只需一份 wrangler.jsonc 配置
+- ✅ 部署包结构与源码完全一致
+- ✅ 零配置迁移，开箱即用
+- ✅ 降低维护成本和出错概率
+
+---
+
+## 🔧 技术实现
+
+### GitHub Actions 工作流
+
+工作流会按照源码结构组织部署包：
+
+```yaml
+- name: Prepare deployment package
+  run: |
+    # 保持与源码一致的目录结构
+    mkdir -p deploy-package/frontend
+    cp -r frontend/dist deploy-package/frontend/dist
+    
+    mkdir -p deploy-package/backend
+    cp backend/wrangler.jsonc deploy-package/backend/  # 直接复制
+```
+
+这样，`backend/wrangler.jsonc` 中的 `"directory": "../frontend/dist"` 在部署包中依然有效！
+
+---
+
+## 💡 设计原则
+
+1. **单一数据源 (Single Source of Truth)**
+   - wrangler.jsonc 只有一份，位于 `backend/`
+   - 避免配置不同步导致的问题
+
+2. **结构一致性 (Structural Consistency)**
+   - 部署包是源码的"快照"
+   - 目录结构、配置文件完全一致
+
+3. **零配置迁移 (Zero-Config Migration)**
+   - 用户无需修改任何配置即可使用部署包
+   - 降低使用门槛和出错概率
+
+4. **最小惊讶原则 (Principle of Least Astonishment)**
+   - 部署包的行为应该与源码一致
+   - 用户不应该感到意外
+
+---
+
+## 📈 改进效果
+
+| 指标 | 改进前 | 改进后 | 提升 |
+|------|--------|--------|------|
+| **配置文件数量** | 2 份 | 1 份 | -50% |
+| **维护工作量** | 高 | 低 | ⬇️ 显著 |
+| **出错概率** | 中 | 低 | ⬇️ 显著 |
+| **学习成本** | 中 | 低 | ⬇️ 显著 |
+
+---
+
+## 🎓 经验总结
+
+### 最佳实践
+
+1. **优先调整文件结构，而非配置文件**
+   - 配置文件通常包含复杂的路径引用
+   - 调整目录结构更简单、更安全
+
+2. **保持部署环境与开发环境的一致性**
+   - 减少"在我机器上能运行"的问题
+   - 提高可预测性和可靠性
+
+3. **遵循 DRY 原则 (Don't Repeat Yourself)**
+   - 避免维护多份相似的配置
+   - 单一数据源更容易管理
+
+---
+
+**优化日期**: 2026-04-23  
+**优化者**: @yueying23  
+**核心理念**: 调整结构适配配置，而非相反

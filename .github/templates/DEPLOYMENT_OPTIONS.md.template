@@ -1,0 +1,139 @@
+# 部署方式对比与选择指南
+
+## 📋 两种部署方式对比
+
+| 特性 | 合并部署 | 分离部署 |
+|------|---------|---------|
+| **Worker 数量** | 1 个 | 2 个（Pages + Workers） |
+| **域名数量** | 1 个统一域名 | 2 个不同域名 |
+| **费用** | 💰 更低 | 💰💰 较高 |
+| **CORS 问题** | ✅ 无 | ⚠️ 需配置 |
+| **缓存策略** | 统一 | 可独立定制 |
+| **部署复杂度** | 简单 | 中等 |
+| **维护成本** | 低 | 中等 |
+| **适用场景** | 个人项目、小团队 | 大型项目、独立扩展需求 |
+
+---
+
+## 🎯 推荐方案
+
+### ✅ 大多数用户：选择合并部署
+
+**理由**:
+- 更低的成本（只需一个 Worker）
+- 更简单的配置（无需处理 CORS）
+- 统一的域名管理
+- 适合个人开发者和小型团队
+
+**部署命令**:
+```bash
+cd backend
+bun install
+wrangler secret put ACCESS_TOKEN_HASH  # 或 ACCESS_PASSWORD
+npx wrangler deploy
+```
+
+---
+
+### 🔧 特殊场景：选择分离部署
+
+**适用情况**:
+1. **需要独立的 CDN 缓存策略**
+2. **前后端独立开发和部署**
+3. **需要使用 Cloudflare Pages 的高级功能**
+4. **合规或架构要求**
+
+**部署步骤**:
+```bash
+# 1. 部署前端到 Pages
+cd frontend/dist
+npx wrangler pages deploy . --project-name=web-sideload-app
+
+# 2. 部署后端到 Workers
+cd ../../backend
+bun install
+wrangler secret put ACCESS_TOKEN_HASH
+npx wrangler deploy
+```
+
+---
+
+## 🔍 技术细节
+
+### 合并部署的工作原理
+
+```
+用户访问: https://xxx.workers.dev/
+    ↓
+Cloudflare Worker (index.ts)
+    ├─ 路径 = /wisp/* → WISP WebSocket 代理
+    └─ 其他路径 → env.ASSETS.fetch() → 前端静态文件
+```
+
+**关键配置** (`backend/wrangler.jsonc`):
+```json
+{
+  "assets": {
+    "directory": "../frontend/dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application"
+  }
+}
+```
+
+---
+
+## 💡 最佳实践
+
+### 1. 认证配置（两种方式都必需）
+
+```bash
+# 方法 A: 使用哈希（推荐）
+echo -n "your_password" | sha256sum
+wrangler secret put ACCESS_TOKEN_HASH
+
+# 方法 B: 直接使用密码（简单）
+wrangler secret put ACCESS_PASSWORD
+```
+
+### 2. 前端 Token 配置
+
+**合并部署**:
+```env
+VITE_WISP_URL=wss://web-sideload-app.workers.dev/wisp/?token=your_password
+```
+
+**分离部署**:
+```env
+VITE_WISP_URL=wss://web-sideload-app-backend.workers.dev/wisp/?token=your_password
+```
+
+---
+
+## ❓ 常见问题
+
+### Q: 我应该选择哪种部署方式？
+
+**A**: 
+- 如果是个人项目或小团队 → **合并部署**
+- 如果需要独立扩展或团队协作 → **分离部署**
+- 如果不确定 → **合并部署**（更简单）
+
+### Q: 两种方式的费用差异大吗？
+
+**A**: 
+- **合并部署**: 约 $5/月（取决于请求量）
+- **分离部署**: 约 $10-15/月（Pages + Workers）
+
+---
+
+## 📚 相关文档
+
+- [Cloudflare Workers 文档](https://developers.cloudflare.com/workers/)
+- [Cloudflare Pages 文档](https://developers.cloudflare.com/pages/)
+- [Wrangler CLI 文档](https://developers.cloudflare.com/workers/wrangler/)
+
+---
+
+**最后更新**: 2026-04-23  
+**维护者**: @yueying23

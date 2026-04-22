@@ -11,23 +11,70 @@
 
 ## 快速部署选项
 
-### 选项 1: Cloudflare Pages + Workers(推荐)
+### 选项 1: 合并部署到单个 Worker（推荐）✨
 
-#### 前端部署到 Cloudflare Pages
-```bash
-cd frontend-dist
-# 使用 Wrangler 或 Cloudflare Dashboard 上传 dist 目录
-npx wrangler pages deploy .
-```
+**优势**: 
+- ✅ 只需一个 Worker，费用更低
+- ✅ 前后端同域名，无 CORS 问题
+- ✅ 配置简单，一键部署
 
-#### 后端部署到 Cloudflare Workers
+**部署步骤**:
+
 ```bash
+# 进入后端目录
 cd backend
+
+# 安装依赖
 bun install
+
+# 配置认证（生产环境必需）
+wrangler secret put ACCESS_TOKEN_HASH
+# 或
+wrangler secret put ACCESS_PASSWORD
+
+# 一键部署（前端 + 后端）
 npx wrangler deploy
 ```
 
-### 选项 2: Docker 部署
+**访问地址**: `https://web-sideload-app.<your-subdomain>.workers.dev`
+
+- 前端页面: `https://xxx.workers.dev/`
+- WISP 代理: `wss://xxx.workers.dev/wisp/?token=xxx`
+
+---
+
+### 选项 2: 分离部署（Cloudflare Pages + Workers）
+
+**适用场景**: 需要独立的 CDN 缓存策略或前后端独立开发
+
+#### 2.1 前端部署到 Cloudflare Pages
+
+```bash
+cd frontend/dist
+
+# 方法 A: 使用 Wrangler CLI
+npx wrangler pages deploy . --project-name=web-sideload-app
+
+# 方法 B: 使用 Cloudflare Dashboard
+# 1. 登录 https://dash.cloudflare.com
+# 2. 进入 Pages > Create a project
+# 3. 上传 frontend/dist 目录
+```
+
+#### 2.2 后端部署到 Cloudflare Workers
+
+```bash
+cd ../backend
+bun install
+wrangler secret put ACCESS_TOKEN_HASH
+npx wrangler deploy
+```
+
+**注意**: 分离部署时，前端需要在构建时嵌入后端 URL
+
+---
+
+### 选项 3: Docker 部署
 
 ```bash
 # 在 deploy-package 目录中
@@ -35,13 +82,19 @@ docker build -t web-sideload-app .
 docker run -d -p 3000:3000 --name sideload web-sideload-app
 ```
 
-### 选项 3: Nginx 静态托管
+**注意**: Docker 部署仅包含前端静态资源，不包含 WISP 代理功能。
+
+---
+
+### 选项 4: Nginx 静态托管
 
 ```bash
-# 将 frontend-dist 目录内容复制到 Nginx 站点目录
-sudo cp -r frontend-dist/* /var/www/html/
+# 将 frontend/dist 目录内容复制到 Nginx 站点目录
+sudo cp -r frontend/dist/* /var/www/html/
 sudo systemctl restart nginx
 ```
+
+**注意**: 同样需要独立的 WISP 后端服务。
 
 ## 环境变量配置
 
