@@ -186,180 +186,71 @@ jobs:
           cp nginx.conf deploy-package/
           cp .dockerignore deploy-package/ 2>/dev/null || true
           
-          # 创建部署说明文档
+          # 生成认证状态和说明
           if [ "${{ github.event.inputs.enable_auth }}" == "true" ]; then
             AUTH_STATUS="✅ 已配置认证保护"
             AUTH_NOTE="
-          ### 🔐 认证配置（已启用）
-          
-          此构建版本已配置 WISP 后端认证。前端将使用以下 URL 连接后端：
-          \`\`\`
-          ${{ github.event.inputs.wisp_url }}?token=***
-          \`\`\`
-          
-          **重要提示：**
-          - 确保您的 Cloudflare Workers 已配置相同的 token
-          - 使用 \`wrangler secret put ACCESS_PASSWORD\` 或 \`ACCESS_TOKEN_HASH\` 设置后端认证
-          - Token 不匹配将导致 401 Unauthorized 错误
-          "
+### 🔐 认证配置(已启用)
+
+此构建版本已配置 WISP 后端认证。前端将使用以下 URL 连接后端:
+\`\`\`
+${{ github.event.inputs.wisp_url }}?token=***
+\`\`\`
+
+**重要提示:**
+- 确保您的 Cloudflare Workers 已配置相同的 token
+- 使用 \`wrangler secret put ACCESS_PASSWORD\` 或 \`ACCESS_TOKEN_HASH\` 设置后端认证
+- Token 不匹配将导致 401 Unauthorized 错误
+"
           else
             AUTH_STATUS="⚠️ 未配置认证保护"
             AUTH_NOTE="
-          ### ⚠️ 安全警告：未启用认证
-          
-          此构建版本**未配置认证保护**，任何人都可以访问您的 WISP 后端！
-          
-          **生产环境强烈建议启用认证：**
-          1. 在 Cloudflare Workers 中设置 Secret：
-             \`\`\`bash
-             wrangler secret put ACCESS_PASSWORD
-             # 或
-             echo -n \"your_password\" | sha256sum
-             wrangler secret put ACCESS_TOKEN_HASH
-             \`\`\`
-          2. 重新构建前端并配置 VITE_WISP_URL：
-             \`\`\`env
-             VITE_WISP_URL=wss://your-worker.workers.dev/wisp/?token=your_password
-             \`\`\`
-          3. 运行 \`bun run build\` 重新构建
-          
-          **风险提示：** 不配置认证可能导致：
-          - ❌ 未经授权的访问和使用
-          - ❌ Cloudflare Workers 费用滥用
-          - ❌ 潜在的安全风险
-          "
+### ⚠️ 安全警告:未启用认证
+
+此构建版本**未配置认证保护**,任何人都可以访问您的 WISP 后端!
+
+**生产环境强烈建议启用认证:**
+1. 在 Cloudflare Workers 中设置 Secret:
+   \`\`\`bash
+   wrangler secret put ACCESS_PASSWORD
+   # 或
+   echo -n \"your_password\" | sha256sum
+   wrangler secret put ACCESS_TOKEN_HASH
+   \`\`\`
+2. 重新构建前端并配置 VITE_WISP_URL:
+   \`\`\`env
+   VITE_WISP_URL=wss://your-worker.workers.dev/wisp/?token=your_password
+   \`\`\`
+3. 运行 \`bun run build\` 重新构建
+
+**风险提示:** 不配置认证可能导致:
+- ❌ 未经授权的访问和使用
+- ❌ Cloudflare Workers 费用滥用
+- ❌ 潜在的安全风险
+"
           fi
           
-          cat > deploy-package/DEPLOYMENT.md 
-<< EOF
-# WebSideloadApp 部署指南
-
-## 📦 构建信息
-
-- **版本:** ${{ github.event.inputs.version }}
-- **认证状态:** ${AUTH_STATUS}
-- **构建时间:** $(date -u +"%Y-%m-%d %H:%M:%S UTC")
-- **Commit:** ${{ github.sha }}
-
-${AUTH_NOTE}
-
-## 快速部署选项
-
-### 选项 1: Cloudflare Pages + Workers（推荐）
-
-#### 前端部署到 Cloudflare Pages
-\`\`\`bash
-cd frontend-dist
-# 使用 Wrangler 或 Cloudflare Dashboard 上传 dist 目录
-npx wrangler pages deploy .
-\`\`\`
-
-#### 后端部署到 Cloudflare Workers
-\`\`\`bash
-cd backend
-bun install
-npx wrangler deploy
-\`\`\`
-
-### 选项 2: Docker 部署
-
-\`\`\`bash
-# 在 deploy-package 目录中
-docker build -t web-sideload-app .
-docker run -d -p 3000:3000 --name sideload web-sideload-app
-\`\`\`
-
-### 选项 3: Nginx 静态托管
-
-\`\`\`bash
-# 将 frontend-dist 目录内容复制到 Nginx 站点目录
-sudo cp -r frontend-dist/* /var/www/html/
-sudo systemctl restart nginx
-\`\`\`
-
-## 环境变量配置
-
-### Cloudflare Workers 必需配置
-
-#### 方法 1: ACCESS_TOKEN_HASH（推荐生产环境）
-\`\`\`bash
-# 生成 SHA-256 哈希
-echo -n "your_password" | sha256sum
-
-# 设置 Secret
-wrangler secret put ACCESS_TOKEN_HASH
-# 粘贴上面生成的哈希值
-\`\`\`
-
-**优点：**
-- ✅ 安全性高，不存储明文密码
-- ✅ 无运行时计算开销
-- ✅ 符合安全最佳实践
-
-#### 方法 2: ACCESS_PASSWORD（简单，适合开发/测试）
-\`\`\`bash
-wrangler secret put ACCESS_PASSWORD
-# 直接输入密码
-\`\`\`
-
-**优点：**
-- ✅ 配置简单
-- ⚠️ 首次请求有微小计算开销
-
-**注意：** Secret 修改后立即生效，无需重新部署 Worker 代码。
-
-### 前端配置
-
-如果需要在构建时嵌入 WISP URL 和 Token：
-
-\`\`\`env
-# frontend/.env.production
-VITE_WISP_URL=wss://your-worker.workers.dev/wisp/?token=your_password
-\`\`\`
-
-**重要：** 
-- Token 在构建时通过 Vite 环境变量注入静态资源
-- 修改 Token 后必须重新构建前端（\`bun run build\`）
-- 前端 Token 虽在代码可见，但通过 HTTPS 传输且配合后端哈希验证
-
-## 注意事项
-
-### 浏览器兼容性
-- ✅ Chrome 61+
-- ✅ Edge 79+
-- ❌ Firefox（不支持 WebUSB）
-- ❌ Safari（不支持 WebUSB）
-
-### HTTPS 要求
-- WebUSB 和 Crypto API 必须在安全上下文（HTTPS 或 localhost）中运行
-- 生产环境必须使用 HTTPS
-
-### 性能
-- 首次加载约 2-3 MB（WASM 模块）
-- 签名耗时 5-15 秒
-
-### 安全最佳实践
-1. **生产环境必须配置认证**（ACCESS_TOKEN_HASH 或 ACCESS_PASSWORD）
-2. 定期轮换 Secret 和前端 Token
-3. 防范 XSS 攻击以保护内存中的凭证
-4. 监控 Cloudflare Workers 使用情况，避免费用滥用
-
-## 故障排除
-
-| 问题 | 解决方案 |
-|------|---------|
-| 401 Unauthorized | 检查前后端 token 是否一致 |
-| WebSocket 连接失败 | 检查 WISP_URL 是否正确 |
-| 设备未检测到 | 检查 USB 线是否支持数据传输 |
-| 签名失败 | 检查 Apple Developer 账户状态 |
-| 前端 404 | 确保正确部署了 dist 目录 |
-
-## 相关链接
-
-- [项目主页](https://github.com/yueying23/sideimpactor)
-- [问题反馈](https://github.com/yueying23/sideimpactor/issues)
-- [Cloudflare Workers 文档](https://developers.cloudflare.com/workers/)
-EOF
+          # 使用模板生成 DEPLOYMENT.md
+          BUILD_TIME=$(date -u +"%Y-%m-%d %H:%M:%S UTC")
+          
+          # 先复制模板
+          cp .github/templates/DEPLOYMENT.md.template deploy-package/DEPLOYMENT.md
+          
+          # 替换简单占位符
+          sed -i "s|{{VERSION}}|${{ github.event.inputs.version }}|g" deploy-package/DEPLOYMENT.md
+          sed -i "s|{{AUTH_STATUS}}|${AUTH_STATUS}|g" deploy-package/DEPLOYMENT.md
+          sed -i "s|{{BUILD_TIME}}|${BUILD_TIME}|g" deploy-package/DEPLOYMENT.md
+          sed -i "s|{{COMMIT_SHA}}|${{ github.sha }}|g" deploy-package/DEPLOYMENT.md
+          
+          # 替换多行 AUTH_NOTE (使用 awk)
+          awk -v note="${AUTH_NOTE}" '{
+            if ($0 ~ /{{AUTH_NOTE}}/) {
+              print note
+            } else {
+              print $0
+            }
+          }' deploy-package/DEPLOYMENT.md > deploy-package/DEPLOYMENT.md.tmp
+          mv deploy-package/DEPLOYMENT.md.tmp deploy-package/DEPLOYMENT.md
           
           echo "Deployment package prepared successfully"
           ls -la deploy-package/
