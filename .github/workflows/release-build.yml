@@ -186,70 +186,17 @@ jobs:
           cp nginx.conf deploy-package/
           cp .dockerignore deploy-package/ 2>/dev/null || true
           
-          # 生成认证状态和说明
-          if [ "${{ github.event.inputs.enable_auth }}" == "true" ]; then
-            AUTH_STATUS="✅ 已配置认证保护"
-            AUTH_NOTE='### 🔐 认证配置(已启用)
+          echo "Base deployment package prepared"
 
-此构建版本已配置 WISP 后端认证。前端将使用以下 URL 连接后端:
-```
-${{ github.event.inputs.wisp_url }}?token=***
-```
-
-**重要提示:**
-- 确保您的 Cloudflare Workers 已配置相同的 token
-- 使用 `wrangler secret put ACCESS_PASSWORD` 或 `ACCESS_TOKEN_HASH` 设置后端认证
-- Token 不匹配将导致 401 Unauthorized 错误'
-          else
-            AUTH_STATUS="⚠️ 未配置认证保护"
-            AUTH_NOTE='### ⚠️ 安全警告:未启用认证
-
-此构建版本**未配置认证保护**,任何人都可以访问您的 WISP 后端!
-
-**生产环境强烈建议启用认证:**
-1. 在 Cloudflare Workers 中设置 Secret:
-   ```bash
-   wrangler secret put ACCESS_PASSWORD
-   # 或
-   echo -n "your_password" | sha256sum
-   wrangler secret put ACCESS_TOKEN_HASH
-   ```
-2. 重新构建前端并配置 VITE_WISP_URL:
-   ```env
-   VITE_WISP_URL=wss://your-worker.workers.dev/wisp/?token=your_password
-   ```
-3. 运行 `bun run build` 重新构建
-
-**风险提示:** 不配置认证可能导致:
-- ❌ 未经授权的访问和使用
-- ❌ Cloudflare Workers 费用滥用
-- ❌ 潜在的安全风险'
-          fi
-          
-          # 使用模板生成 DEPLOYMENT.md
-          BUILD_TIME=$(date -u +"%Y-%m-%d %H:%M:%S UTC")
-          
-          # 先复制模板
-          cp .github/templates/DEPLOYMENT.md.template deploy-package/DEPLOYMENT.md
-          
-          # 替换简单占位符
-          sed -i "s|{{VERSION}}|${{ github.event.inputs.version }}|g" deploy-package/DEPLOYMENT.md
-          sed -i "s|{{AUTH_STATUS}}|${AUTH_STATUS}|g" deploy-package/DEPLOYMENT.md
-          sed -i "s|{{BUILD_TIME}}|${BUILD_TIME}|g" deploy-package/DEPLOYMENT.md
-          sed -i "s|{{COMMIT_SHA}}|${{ github.sha }}|g" deploy-package/DEPLOYMENT.md
-          
-          # 替换多行 AUTH_NOTE (使用 awk)
-          awk -v note="${AUTH_NOTE}" '{
-            if ($0 ~ /{{AUTH_NOTE}}/) {
-              print note
-            } else {
-              print $0
-            }
-          }' deploy-package/DEPLOYMENT.md > deploy-package/DEPLOYMENT.md.tmp
-          mv deploy-package/DEPLOYMENT.md.tmp deploy-package/DEPLOYMENT.md
-          
-          echo "Deployment package prepared successfully"
-          ls -la deploy-package/
+      # 9.1. 生成部署文档
+      - name: Generate deployment documentation
+        run: bash .github/scripts/generate-deployment-docs.sh
+        env:
+          VERSION: ${{ github.event.inputs.version }}
+          ENABLE_AUTH: ${{ github.event.inputs.enable_auth }}
+          WISP_URL: ${{ github.event.inputs.wisp_url }}
+          COMMIT_SHA: ${{ github.sha }}
+          OUTPUT_DIR: deploy-package
 
       # 9.5. 生成 Release Body 文件
       - name: Generate Release Body
