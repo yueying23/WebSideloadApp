@@ -230,7 +230,8 @@ jobs:
           "
           fi
           
-          cat > deploy-package/DEPLOYMENT.md << EOF
+          cat > deploy-package/DEPLOYMENT.md 
+<< EOF
 # WebSideloadApp 部署指南
 
 ## 📦 构建信息
